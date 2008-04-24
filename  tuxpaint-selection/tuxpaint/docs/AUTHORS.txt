@@ -1,0 +1,564 @@
+AUTHORS.txt for Tux Paint
+
+Tux Paint - A simple drawing program for children.
+
+Copyright (c) 2002-2008 by Bill Kendrick and others
+bill@newbreedsoftware.com
+http://www.tuxpaint.org/
+
+
+June 17, 2002 - April 19, 2008
+
+$Id: AUTHORS.txt,v 1.156 2008/04/19 22:17:41 secretlondon Exp $
+
+
+* Design and Coding:
+
+  Bill Kendrick <bill@newbreedsoftware.com>
+  New Breed Software
+  http://www.newbreedsoftware.com/
+
+  Flood fill code based on Wikipedia example:
+  http://www.wikipedia.org/wiki/Flood_fill/C_example
+  by Damian Yerrick - http://www.wikipedia.org/wiki/Damian_Yerrick
+
+  800x600 resolution support patch by:
+  TOYAMA Shin-ichi <shin1@wmail.plala.or.jp>
+
+  Arbitrary resolution support, smudge magic tool, grass magic tool,
+  brick magic tools, improved stamp tinter, and other fixes by:
+  Albert Cahalan <albert@users.sf.net>
+
+  Bilinear interpolation code based on an example by Christian Graus
+  ( http://www.codeproject.com/cs/media/imageprocessing4.asp ).
+
+  Input Method (IM) Framework implemented by:
+  Mark K. Kim <mkkim214@gmail.com>
+
+  PostScript printing code based loosely on NetPBM's "pnmtops",
+  copyright (c) 1989 by Jef Poskanzer.
+  License of "pnmtops.c":
+    Permission to use, copy, modify, and distribute this software and its
+    documentation for any purpose and without fee is hereby granted, provided
+    that the above copyright notice appear in all copies and that both that
+    copyright notice and this permission notice appear in supporting
+    documentation.  This software is provided "as is" without express or
+    implied warranty.
+
+
+* Graphics
+
+  * UI buttons - Created using "AquaPro" button script in The GIMP
+    Copyright (C) 2001 Denis Bodor <b.bodor@calixo.net>
+
+  * UI icons - Created by Bill Kendrick using The GIMP
+
+  * Cartoon representation of "Tux," the Linux penguin
+    Created by Sam "Criswell" Hart  <criswell@geekcomix.com>
+    Tux originally designed by Larry Ewing <lewing@isc.tamue.edu>
+    http://www.isc.tamu.edu/~lewing/linux/
+
+  * Most brushes created using The GIMP
+    by Bill Kendrick
+
+  * Neko cat brushes based on XNeko by Masayuki Koba
+
+  * More brushes created using Inkscape
+    by Caroline Ford <caroline.ford.work@googlemail.com>
+    (Licensed under GFDL/CC-BY-SA/GPL)
+      + Blob
+      + Chisle
+      + Cut-out square in diamond
+      + Cut-out star in circle
+      + Diamond
+      + Five-petal flower (large and small)
+      + Six-petal flower (large and small)
+      + Heart
+      + Hexagon
+      + Lozenge
+      + Oval
+      + Pentagon
+      + Spiral
+      + Splat
+      + Star
+      + Triangle (up and down)
+
+
+* Starter Images
+
+  * Chicken
+  * Jet Plane
+  * Rocket
+    Bill Kendrick <bill@newbreedsoftware.com>
+
+  * San Francisco at dusk
+    Public domain.  National Oceanic & Atmospheric Adminstration (NOAA)
+    http://www.photolib.noaa.gov/
+    Image ID: line1989, America's Coastlines Collection
+    Location: San Francisco Bay, California
+    Photographer: Rich Bourgerie, Oceanographer, CO-OPS, NOS, NOAA
+
+  * Coral reef
+    Public domain.  National Oceanic & Atmospheric Adminstration (NOAA)
+    http://www.photolib.noaa.gov/
+    Image ID: reef2583, The Coral Kingdom Collection
+    Photographer: Thomas K. Gibson
+    Credit: Florida Keys National Marine Sanctuary
+
+  * Shipwreck
+  * Tux the Farmer
+    Jim Trice <jimtrice@linuxmail.org>
+
+  * Street
+    Ingrid Illa Terrier
+    (via Pere Pujal Carabantes <ppujal@airtel.net>)
+
+  * Nagasaki
+    Jim Trice <jimtrice@linuxmail.org>
+
+  * Caracassone, France
+    Pere Pujal i Carabantes <pere@fornol.no-ip.org>
+    License: GPL
+
+  * World Maps
+    Original is licensed under the GFDL and CC-BY-SA and has multiple authors.
+    Based off http://commons.wikimedia.org/wiki/Image:BlankMap-World.svg
+    (Public Domain, by Wikipedia user 'Vardion').
+    Processed and chopped into Tux Paint starter-sized pieces by:
+    Caroline Ford <caroline.ford.work@googlemail.com>.
+
+  * United States of America map
+    Original is licensed under the GFDL and CC-BY-SA
+    Based off: http://commons.wikimedia.org/wiki/Image:Map_of_USA_without_state_names.svg
+    Creators: Wikipedia users Wapcaplet and Angr
+    Processed into a Tux Paint starter by:
+    Caroline Ford <caroline.ford.work@googlemail.com>.
+
+  * Canada map
+  * Japan map
+    Ed Monty <edmonty@gmail.com>
+
+  * Spirograph
+    Using Inkscape's Spirograph effect
+    Caroline Ford <caroline.ford.work@googlemail.com>
+
+  * Jigsaw
+    Original was released into the public domain
+    Based off http://commons.wikimedia.org/wiki/Image:Puzzle-4.svg  
+    Creator: Wikipedia user Amada44
+    Processed by into a tuxpaint starter by: 
+    Caroline Ford <caroline.ford.work@googlemail.com>
+
+* Fonts
+
+  * DejaVu Sans
+    http://dejavu.sourceforge.net/
+    Copyright 2003, Bitstream, Inc.
+    (See "dejavu.txt")
+
+  * From the Free Universal Character Set Outline Fonts.
+    http://www.nongnu.org/freefont/
+    GPL'd, Copyright 2002 Primoz Peterlin <primoz.peterlin@biofiz.mf.uni-lj.si>
+    et al
+
+  * Other fonts: See their respective "COPYING.txt" details,
+    under "fonts/locale/*_docs/"...
+
+
+* Sound
+
+  * Many recorded by Bill Kendrick
+    * Blocks - Stack of Nintendo NES cartridges hitting each other.
+    * Blur - Microphone against mousepad.
+    * Chalk - Microphone against head of hair.
+    * Fade - Squeaky frog.
+    * Smudge - Squishy mouth noise.
+
+  * Voice of Tux the Penguin
+    Daniel 'TuxthePenguin' Alston <supertuxfansite@gmail.com>
+  
+  * Cartoon
+    * "cartoon6.wav" from http://www.grsites.com/
+    
+  * Many others taken from various sources on the web.
+
+  * Edited using SOX
+    http://sox.sourceforge.net/
+
+  * Edited using Audacity
+    http://www.audacity.org/
+
+  * Kaliedoscope & Shift tool sounds
+    Caroline Ford <caroline.ford.work@googlemail.com>
+    2007, released under GNU Free Documentation License
+
+
+* Translations
+
+  * Afrikaans
+    Petri Jooste <petri.jooste@nwu.ac.za>
+
+  * Albanian
+    Ilir Rugova <ilirrugova@gmx.de>
+    Laurent Dhima <laurenti@alblinux.net>
+
+  * Arabic
+    Khaled Hosny <khaledhosny@eglug.org>
+    Khalid Al Holan <alholan@gmail.com>
+
+  * Asturian
+    Xandru Armesto <alarmes@wanadoo.es>
+    Mikel González <mikelisimu@yahoo.es>
+
+  * Australian English
+    Chris Goerner, Canonical Ltd, and Rosetta Contributors
+    via Caroline Ford <caroline.ford.work@googlemail.com>
+
+  * Azerbaijani
+    Jamil Farzana <jamil.farzana@gmail.com>
+
+  * Basque
+    Juan Irigoien <juanirigoien@yahoo.es>
+
+  * Belarusian
+    Eugene Zelenko <greendeath@mail.ru>
+  
+  * Breton
+    Korvigelloù An Drouizi (Philippe) <drouizig@drouizig.org>
+
+  * British English
+    Gareth Owen <gowen72@yahoo.com>
+
+  * Bulgarian
+    Martin Zhekov <mjekov@bginfo.net>
+    Yavor Doganov <yavor@doganov.org>
+
+  * Canadian English
+    Matthew Lange, Canonical Ltd, and Rosetta Contributors
+    via Caroline Ford <caroline.ford.work@googlemail.com>
+
+  * Catalan
+    Pere Pujal Carabantes <ppujal@airtel.net>
+
+  * Chinese (Simplified)
+    Wang Jian <lark@linux.net.cn>
+
+  * Chinese (Simplified) README and FAQ documentation
+    HackerGene <hackergene@gmail.com>, http://tuxpaint.cn/
+
+  * Chinese (Traditional)
+    Song Huang <song@song.idv.tw>
+    Wei-Lun Chao <chaoweilun@gmail.com>
+
+  * Chinese (Traditional) documentation
+    Song Huang <song@song.idv.tw>
+
+  * Chinese (Traditional) input method
+    Song Huang <song@song.idv.tw>
+
+  * Croatian
+    Nedjeljko Jedvaj <jedvaj.nedeljko@lexunit.com>
+  
+  * Czech
+    Peter Sterba <sterba@sterba.com>
+    Martin <barin@email.cz>,
+    Lucie Burianova <Lucie.Burianova@global-dtp.com>
+    tropikhajma <tropikhajma@seznam.cz>
+    Vaclav Cermak <vaclav.cermak@gmail.com>
+
+  * Danish
+    Joe Hansen <joedalton2@yahoo.dk>
+    Gruppen for Lokalisering af Frit Programmel til Dansk
+      <http://dansk-gruppen.dk>
+    Rasmus Erik Voel Jensen <i18n@solsort.dk> [retired]
+    Mogens Jæger <mogensjaeger@get2net.dk> 
+    Mikkel Kirkgaard Nielsen <translation@mikini.dk>
+
+  * Dutch
+    Freek de Kruijf <f.de.kruijf@hetnet.nl>
+    Herman Bruyninckx <Herman.Bruyninckx@mech.kuleuven.ac.be>
+    Geert Stams <geertstams@wanadoo.nl>
+    Michael de Rooij <micr@zeelandnet.nl>
+
+  * Esperanto
+    Edmund GRIMLEY EVANS <edmundo@rano.org>
+
+  * Estonian
+    Henrik Pihl <henrik@saarlane.ee>
+
+  * Faroese
+    Lis Gøthe í Jákupsstovu <morshus@gmail.com>
+
+  * Finnish
+    Jorma Karvonen <karvjorm@users.sf.net>
+    Tarmo Toikkanen <tarmo.toikkanen@iki.fi>
+    Niko Lewman <niko.lewman@edu.hel.fi>
+
+  * French
+    Jacques Chion <Jacques.Chion@wanadoo.fr>
+    Charles Vidal
+    Jérôme Chantreau <plovemax@hotmail.com> [documentation]
+
+  * Galician
+    Leandro Regueiro <leandro.regueiro@gmail.com>
+
+  * Georgian
+    Gia Shervashidze <giasher@telenet.ge>
+    
+  * German
+    Fabian Franz <FabianFranz@gmx.de>
+    Roland Illig <roland.illig@gmx.de>
+    Patrick <nc-spechtpa3 {At} netcologne [Dot] de>
+    Burkhard Lück <lueck@hube-lueck.de>
+
+  * Gronings
+    J.F.M. Lange <jfm.lange@hky.de>
+
+  * Greek
+    Yannis Papatzikos <papatzikos@yahoo.gr>
+    Sokratis Sofianopoulos <sokratis.sofianopoulos@gmail.com>
+    The Greek Linux i18n Team <i18ngr@lists.hellug.gr>  [NOTE: mailing list]
+
+  * Gujarati
+    Kartik Mistry <kartik.mistry@gmail.com>
+
+  * Hebrew
+    Dovix <dovix2003@yahoo.com>
+    Koby <kobybo@hotmail.com>
+    Itai <Itais@newmail.net>
+    Leor Bleier <leor972@gmail.com>
+
+  * Hindi
+    Ankit Malik <ankitmalik@gmail.com>
+
+  * Hungarian
+    Török Gábor <gabo@linuxportal.hu>
+    Gabor Kelemen <kelemeng@gnome.hu>
+
+  * Icelandic
+    Pjetur G. Hjaltason <pjetur@pjetur.net>
+
+  * Indonesian
+    Tedi Heriyanto <tedi_h@gmx.net>
+
+  * Irish Gaelic
+    Kevin Patrick Scannell <kscanne@gmail.com>
+
+  * Italian
+    Marco Milanesi <kpanic@pavia.linux.it>
+    Flavio Pastor <flavio.pastore@zonaitalia.it>
+  
+  * Japanese
+    TOYAMA Shin-ichi <shin1@wmail.plala.or.jp>
+
+  * Japanese Input Method
+    Mark K. Kim <mkkim214@gmail.com>
+    TOYAMA Shin-ichi <shin1@wmail.plala.or.jp>
+
+  * Khmer
+    Khoem Sokhem <khoemsokhem@khmeros.info>
+
+  * Kinyarwanda
+    Steve Murphy <murf@e-tools.com>
+    (Based on translations by:
+    Philibert Ndandali <ndandali@yahoo.fr>,
+    Viateur MUGENZI <muvia1@yahoo.fr>,
+    NoÃ«lla Mupole <s24211045@tuks.co.za>,
+    Carole Karema <karemacarole@hotmail.com>,
+    JEAN BAPTISTE NGENDAHAYO <ngenda_denis@yahoo.co.uk>,
+    Augustin KIBERWA,
+    Donatien NSENGIYUMVA <ndonatienuk@yahoo.co.uk>, and
+    Antoine Bigirimana <antoine@e-tools.com>.)
+
+  * Korean
+    Mark K. Kim <mkkim214@gmail.com>
+  
+  * Korean Input Method
+    Mark K. Kim <mkkim214@gmail.com>
+  
+  * Kurdish
+    Amed Ç. Jiyan <amed@pckurd.net>
+
+  * Latvian
+    Raivis Strogonovs <raivucis@gmail.com>
+
+  * Lithuanian
+    Alesis Novik <alesisnov@gmail.com>
+    Mantas Kriauciunas <monte@mail.lt>
+    Rita Verbauskaite
+    Gintaras Go?tautas <gintaras@nes.lt>
+
+  * Macedonian
+    Kliment Simoncev and fleka, Canonical Ltd, and Rosetta Contributors
+    via Caroline Ford <caroline.ford.work@googlemail.com>
+
+  * Malay
+    Muhammad Najmi Ahmad Zabidi <mnajem@linuxmail.org>
+
+  * Ndebele
+    Vincent Mahlangu <vmahlangu@parliament.gov.za>
+
+  * Norwegian Bokmal
+    Knut Erik Hollund <khollund@responze.net>
+    Dag H. Loras <dag.loraas@operamail.com>
+    Klaus Ade Johnstad <klaus@skolelinux.no>
+    Karl Ove Hufthammer <karl@huftis.org>
+
+  * Norwegian Nynorsk
+    Karl Ove Hufthammer <karl@huftis.org>
+
+  * Occitan
+    Yannig MARCHEGAY (Kokoyaya), Canonical Ltd, and Rosetta Contributors
+    via Caroline Ford <caroline.ford.work@googlemail.com>
+
+  * Ojibway
+    Ed Montgomery <edm@rocketmail.com>
+
+  * Polish
+    Arkadiusz Lipiec <alipiec@elka.pw.edu.pl>
+    Robert Glowczynski <robertg@software.com.pl>
+    Tomasz 'karave' Tarach <karave@poczta.onet.pl>
+    Andrzej M. Krzysztofowicz <ankry@mif.pg.gda.pl>
+    Michal Terbert <michaeel@skrzynka.pl>
+
+  * Portuguese (Brazilian)
+    Fred Ulisses Maranhao <fred_maranhao@yahoo.com.br>
+    Daniel José Viana <danjovic@vespanet.com.br>
+      - Dedicated to my beloved daughter Scarlet
+    Silvio Faria <sirofa2003@yahoo.com.br>
+    Adorilson Bezerra de Araujo <adorilson@gmail.com>
+    Frederico Goncalves Guimaraes <frederico@teia.bio.br>
+ 
+  * Portuguese (Portugal)
+    Ricardo Cruz <rpmcruz@clix.pt>
+    Helder Correia <helder.pereira.correia@gmail.com>
+    
+  * Romanian
+    Laurentiu Buzdugan
+
+  * Russian
+    Dmitriy Ivanov <ace22b@myrealbox.com>
+    Sergei Popov <skein@rambler.ru>
+
+  * Scottish Gaelic
+    Niall Tracey <internationiall@hotmail.com>
+
+  * Serbian
+    Aleksandar Jelenak <jelenak@verizon.net>
+  
+  * Slovak
+    Peter Tuhársky <tuharsky@misbb.sk>
+    Milan Plzik <mmp@golem.gymzv.sk> [retired?]
+    Andrej Kacian <andrej@kacian.sk>
+
+  * Slovenian
+    Urska Colner <urska.colner@agenda.si>
+    Ines Kovacevic <ines@agenda.si>
+    Matej Urban <matej.urban@gmail.com>
+
+  * Spanish
+    Gabriel Gazzan <ggabriel@internet.com.uy>
+    Pablo Pita <pablo.pita@kdemail.net>
+
+  * Spanish (Mexico)
+    Ignacio Tike <ignaciotike@spymac.com>
+    Daniel Illingworth <webmaster@intermagen.net>
+    Luis C. Suárez <luiscsuarez@gmail.com>
+
+  * Swahili
+    Martin Benjamin <martin.benjamin@yale.edu>
+    Alberto Escudero-Pascual <aep@it46.se>
+
+  * Swedish
+    Robin Rosenberg <robin.rosenberg@dewire.com>
+    Daniel Nylander <po@danielnylander.se>
+    Tomas Skäre <tomas@nocrew.org>
+    Magnus Dahl <magnus.dahl@bredband.net>
+    Daniel Andersson <daniel@septum.org> [retired]
+
+  * Tagalog
+    Ricky Lontoc <gb_515_deme@hotmail.com>
+    Technical assistance by Ed Montgomery <edmontgomery@hotmail.com>
+
+  * Tamil
+    Mugunth <mugunth@thamizha.com>
+
+  * Telugu
+    Pavithran Shakamuri <pavithran.s@gmail.com>
+
+  * Thai
+    Ouychai Chaita <ae.freeman@gmail.com>
+
+  * Thai input method
+    Ed Montgomery <edm@rocketmail.com>
+
+  * Tibetan
+    Dawa Dolma
+
+  * Turkish
+    Doruk Fisek <dfisek@fisek.com.tr>
+
+  * Twi
+    Joana Portia Antwi-Danso <portnass2003@yahoo.com>
+    Samuel Sarpong <srnsam@yahoo.com>
+
+  * Ukranian / Urkanian documentation
+    Serhij Dubyk <dubyk@library.lviv.ua>
+
+  * Venda
+    Shumani Mercy Nehulaudzi <nevhulaudzi@saps.org.za>>
+
+  * Vietnamese
+    Le Quang Phan <lqphan@hn.vnn.vn>
+    Clytie Siddall <clytie@riverland.net.au>
+
+  * Walloon
+    Pablo Saratxaga <pablo@walon.org>
+
+  * Welsh
+    Kevin Donnelly <kevin@dotmon.com>
+
+  * Xhosa
+    Dwayne Bailey <dwayne@translate.org.za>
+
+  * Zapoteco
+    Rodrigo Perez Ramirez and Indigenas Sin Fronteras <isf_mx@yahoo.com>
+    
+
+* Ports and Packaging
+
+  * Windows 32-bit coding and builds
+    John Popplewell <john@johnnypops.demon.co.uk>
+
+  * Mac OS X coding and builds
+    Martin Fuhrer <mfuhrer@users.sourceforge.net>
+    Darrell Walisser <walisser@mac.com>  [retired]
+
+  * Maemo (Nokia 770 and N880) coding and builds
+    Alessandro Pasotti <apasotti@gmail.com>
+
+  * BeOS coding and builds
+    Marcin 'Shard' Konicki <shard at beosjournal.org>
+
+  * Debian Linux packages
+    Ben Armstrong <synrg@sanctuary.nslug.ns.ca>
+
+  * RedHat Linux / Fedora Core packages and RPM spec file
+    TOYAMA Shin-ichi <shin1@wmail.plala.or.jp>
+    Richard June <rjune[AT]lumensoftware.com>
+
+  * Slackware Linux packages
+    Torsten Giebl <wizard@turricane.org>
+
+  * NetBSD packages
+    Thomas Klausner <wiz@danbala.ifoer.tuwien.ac.at>
+
+
+* Support / Testers
+
+  Tux4Kids.org, Sam Hart  (Tux4Kids project manager)
+  Many others in the community!  (Testing, bug fixes, comments, kudos)
+
+
+See also:  CHANGES.txt
+
