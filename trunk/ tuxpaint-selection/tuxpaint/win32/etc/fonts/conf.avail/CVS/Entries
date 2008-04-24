@@ -1,0 +1,26 @@
+/10-autohint.conf/1.1/Sun Nov 11 15:50:35 2007//
+/10-no-sub-pixel.conf/1.1/Sun Nov 11 15:50:35 2007//
+/10-sub-pixel-bgr.conf/1.1/Sun Nov 11 15:50:35 2007//
+/10-sub-pixel-rgb.conf/1.1/Sun Nov 11 15:50:35 2007//
+/10-sub-pixel-vbgr.conf/1.1/Sun Nov 11 15:50:36 2007//
+/10-sub-pixel-vrgb.conf/1.1/Sun Nov 11 15:50:36 2007//
+/10-unhinted.conf/1.1/Sun Nov 11 15:50:36 2007//
+/20-fix-globaladvance.conf/1.1/Sun Nov 11 15:50:36 2007//
+/20-lohit-gujarati.conf/1.1/Sun Nov 11 15:50:36 2007//
+/20-unhint-small-vera.conf/1.1/Sun Nov 11 15:50:36 2007//
+/30-amt-aliases.conf/1.1/Sun Nov 11 15:50:36 2007//
+/30-urw-aliases.conf/1.1/Sun Nov 11 15:50:36 2007//
+/40-generic.conf/1.1/Sun Nov 11 15:50:36 2007//
+/49-sansserif.conf/1.1/Sun Nov 11 15:50:36 2007//
+/50-user.conf/1.1/Sun Nov 11 15:50:36 2007//
+/51-local.conf/1.1/Sun Nov 11 15:50:36 2007//
+/60-latin.conf/1.1/Sun Nov 11 15:50:36 2007//
+/65-fonts-persian.conf/1.1/Sun Nov 11 15:50:36 2007//
+/65-nonlatin.conf/1.1/Sun Nov 11 15:50:36 2007//
+/69-unifont.conf/1.1/Sun Nov 11 15:50:36 2007//
+/70-no-bitmaps.conf/1.1/Sun Nov 11 15:50:36 2007//
+/70-yes-bitmaps.conf/1.1/Sun Nov 11 15:50:36 2007//
+/80-delicious.conf/1.1/Sun Nov 11 15:50:36 2007//
+/90-synthetic.conf/1.1/Sun Nov 11 15:50:36 2007//
+/README/1.1/Sun Nov 11 15:50:36 2007//
+D
