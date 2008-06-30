@@ -3,7 +3,7 @@
 
   Tux Paint - A simple drawing program for children.
   
-  Copyright (c) 2002-2008 by Bill Kendrick and others; see AUTHORS.txt
+  Copyright (c) 2002-2007 by Bill Kendrick and others; see AUTHORS.txt
   bill@newbreedsoftware.com
   http://www.tuxpaint.org/
 
@@ -22,8 +22,8 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
   (See COPYING.txt)
   
-  June 14, 2002 - March 4, 2008
-  $Id: tuxpaint.c,v 1.632 2008/04/17 20:11:03 secretlondon Exp $
+  June 14, 2002 - February 24, 2008
+  $Id: tuxpaint.c,v 1.625 2008/02/26 06:02:53 wkendrick Exp $
 */
 
 
@@ -33,7 +33,7 @@
 /* Color depth for Tux Paint to run in, and store canvases in: */
 
 #if defined(NOKIA_770)
-# define VIDEO_BPP 16
+# define VIDEO_BPP 15
 #endif
 
 #if defined(OLPC_XO)
@@ -407,6 +407,7 @@ extern WrapperData macosx;
 
 #include "SDL_getenv.h"
 
+#include "tuxpaint.h"
 #include "i18n.h"
 #include "cursor.h"
 #include "pixels.h"
@@ -416,6 +417,7 @@ extern WrapperData macosx;
 #include "fonts.h"
 #include "dirwalk.h"
 #include "get_fname.h"
+#include "selection.h"
 
 #include "tools.h"
 #include "titles.h"
@@ -574,10 +576,6 @@ static grid_dims gd_colors;	// was 17x1
 
 static int WINDOW_WIDTH, WINDOW_HEIGHT;
 
-void magic_putpixel(SDL_Surface * surface, int x, int y, Uint32 pixel);
-Uint32 magic_getpixel(SDL_Surface * surface, int x, int y);
-
-
 static void setup_normal_screen_layout(void)
 {
   int buttons_tall;
@@ -706,10 +704,11 @@ static void setup_screen_layout(void)
 
 static SDL_Surface *screen;
 static SDL_Surface *canvas;
+
 static SDL_Surface *img_starter, *img_starter_bkgd;
 
 /* Update a rect. based on two x/y coords (not necessarly in order): */
-static void update_screen(int x1, int y1, int x2, int y2)
+void update_screen(int x1, int y1, int x2, int y2)
 {
   int tmp;
 
@@ -814,7 +813,7 @@ static int grid_hit_gd(const SDL_Rect * const r, unsigned x, unsigned y,
 #define GRIDHIT_GD(r,gd) grid_hit_gd(&(r), event.button.x, event.button.y, &(gd))
 
 /* Update the screen with the new canvas: */
-static void update_canvas(int x1, int y1, int x2, int y2)
+void update_canvas(int x1, int y1, int x2, int y2)
 {
   SDL_Rect src, dest;
 
@@ -837,7 +836,7 @@ static void update_canvas(int x1, int y1, int x2, int y2)
   }
 
   SDL_BlitSurface(canvas, NULL, screen, &r_canvas);
-  update_screen(x1 + 96, y1, x2 + 96, y2);
+  update_screen(x1 + r_canvas.x, y1 + r_canvas.y, x2 + r_canvas.x, y2 + r_canvas.y);
 }
 
 
@@ -1344,7 +1343,6 @@ static void mainloop(void);
 static void brush_draw(int x1, int y1, int x2, int y2, int update);
 static void blit_brush(int x, int y, int direction);
 static void stamp_draw(int x, int y);
-static void rec_undo_buffer(void);
 static void show_usage(FILE * f, char *prg);
 #if !defined(WIN32) && !defined(__APPLE__) && !defined(__BEOS__)
 void show_available_papersizes(FILE * fi, char * prg);
@@ -1368,9 +1366,9 @@ static void draw_none(void);
 
 static void do_undo(void);
 static void do_redo(void);
-static void render_brush(void);
 static void line_xor(int x1, int y1, int x2, int y2);
 static void rect_xor(int x1, int y1, int x2, int y2);
+static void render_brush(void);
 static void draw_blinking_cursor(void);
 static void hide_blinking_cursor(void);
 
@@ -1456,7 +1454,6 @@ static int do_quit(int tool);
 int do_open(void);
 int do_new_dialog(void);
 int do_color_picker(void);
-int do_slideshow(void);
 void play_slideshow(int * selected, int num_selected, char * dirname,
 		    char **d_names, char **d_exts, int speed);
 void draw_selection_digits(int right, int bottom, int n);
@@ -1487,7 +1484,6 @@ static void draw_image_title(int t, SDL_Rect dest);
 static void handle_keymouse(SDLKey key, Uint8 updown);
 static void handle_active(SDL_Event * event);
 static char *remove_slash(char *path);
-static char *replace_tilde(const char* const path);
 #ifdef NO_SDLPANGO
 static void anti_carriage_return(int left, int right, int cur_top,
 				 int new_top, int cur_bot, int line_width);
@@ -1849,6 +1845,11 @@ int main(int argc, char *argv[])
 #define PROMPT_TIP_LEFTCLICK_TXT gettext_noop("Remember to use the left mouse button!")
 #define PROMPT_TIP_LEFTCLICK_YES gettext_noop("OK")
 
+enum
+{
+  SELECT_TOOL_MODE_SELECT,
+  SELECT_TOOL_MODE_DONE
+};
 
 enum
 {
@@ -1865,7 +1866,7 @@ static void mainloop(void)
   int done, which, old_x, old_y, new_x, new_y,
     line_start_x, line_start_y, shape_tool_mode,
     shape_ctr_x, shape_ctr_y, shape_outer_x, shape_outer_y,
-    old_stamp_group;
+    old_stamp_group, select_tool_mode, select_tool_x1, select_tool_y1;
   int num_things;
   int *thing_scroll;
   int cur_thing, do_draw, old_tool, tmp_int, max;
@@ -1895,6 +1896,9 @@ static void mainloop(void)
   shape_outer_x = 0;
   shape_outer_y = 0;
   shape_tool_mode = SHAPE_TOOL_MODE_DONE;
+  select_tool_mode = SELECT_TOOL_MODE_DONE;
+  select_tool_x1 = 0;
+  select_tool_y1 = 0;
   button_down = 0;
   last_cursor_blink = cur_toggle_count = 0;
   texttool_len = 0;
@@ -2322,8 +2326,7 @@ static void mainloop(void)
 
 	    if (cur_tool == TOOL_TEXT && which != TOOL_TEXT &&
                 which != TOOL_NEW && which != TOOL_OPEN &&
-                which != TOOL_SAVE && which != TOOL_PRINT &&
-                which != TOOL_QUIT)
+                which != TOOL_SAVE && which != TOOL_QUIT)
 	    {
 	      if (cursor_x != -1 && cursor_y != -1)
 	      {
@@ -2458,6 +2461,10 @@ static void mainloop(void)
 	      draw_erasers();
 	      draw_colors(COLORSEL_DISABLE);
 	    }
+		else if (cur_tool == TOOL_SELECT)
+		{
+			// [TODO] put the different selection types as tools
+		}
 	    else if (cur_tool == TOOL_UNDO)
 	    {
 	      if (cur_undo == newest_undo)
@@ -2581,14 +2588,6 @@ static void mainloop(void)
 	    }
 	    else if (cur_tool == TOOL_PRINT)
 	    {
-              /* If they haven't hit [Enter], but clicked 'Print', add their text now -bjk 2007.10.25 */
-              if (old_tool == TOOL_TEXT && texttool_len > 0)
-              {
-                rec_undo_buffer();
-                do_render_cur_text(1);
-                texttool_len = 0;
-                cursor_textwidth = 0;
-              }
 
           // original print code was here
           print_image();
@@ -3189,7 +3188,7 @@ static void mainloop(void)
 	    /* (Arbitrarily large, so we draw once now) */
 	    reset_brush_counter();
 
-	    /* brush_draw(old_x, old_y, old_x, old_y, 1); fixes SF #1934883? */
+	    brush_draw(old_x, old_y, old_x, old_y, 1);
 	    playsound(screen, 0, paintsound(img_cur_brush_w), 1,
 		      event.button.x, SNDDIST_NEAR);
 	  }
@@ -3221,7 +3220,7 @@ static void mainloop(void)
 	    /* (Arbitrarily large, so we draw once now) */
 	    reset_brush_counter();
 
-	    /* brush_draw(old_x, old_y, old_x, old_y, 1); fixes sf #1934883? */
+	    brush_draw(old_x, old_y, old_x, old_y, 1);
 
 	    playsound(screen, 1, SND_LINE_START, 1, event.button.x,
 		      SNDDIST_NEAR);
@@ -3261,6 +3260,10 @@ static void mainloop(void)
 	      shape_tool_mode = SHAPE_TOOL_MODE_DONE;
 	      draw_tux_text(TUX_GREAT, tool_tips[TOOL_SHAPES], 1);
 	    }
+	  }
+	  else if (cur_tool == TOOL_SELECT)
+	  {
+		begin_selection(canvas, screen, event.button.x, event.button.y);
 	  }
 	  else if (cur_tool == TOOL_MAGIC)
 	  {
@@ -3620,6 +3623,10 @@ static void mainloop(void)
 	      }
 	    }
 	  }
+	  else if (cur_tool == TOOL_SELECT)
+	  {
+		finish_selection(canvas, screen, event.button.x, event.button.y);
+	  }
 	  else if (cur_tool == TOOL_MAGIC)
 	  {
 	    int undo_ctr;
@@ -3825,15 +3832,7 @@ static void mainloop(void)
 	       Draw XOR where line will go: */
 
 	    line_xor(line_start_x, line_start_y, old_x, old_y);
-
 	    line_xor(line_start_x, line_start_y, new_x, new_y);
-
-	    update_screen(line_start_x + r_canvas.x,
-			  line_start_y + r_canvas.y, old_x + r_canvas.x,
-			  old_y + r_canvas.y);
-	    update_screen(line_start_x + r_canvas.x,
-			  line_start_y + r_canvas.y, new_x + r_canvas.x,
-			  new_y + r_canvas.y);
 	  }
 	  else if (cur_tool == TOOL_SHAPES)
 	  {
@@ -3855,6 +3854,10 @@ static void mainloop(void)
 
 	      SDL_Flip(screen);
 	    }
+	  }
+	  else if (cur_tool == TOOL_SELECT)
+	  {
+		update_selection(canvas, screen, event.button.x, event.button.y);
 	  }
 	  else if (cur_tool == TOOL_MAGIC)
 	  {
@@ -3930,21 +3933,11 @@ static void mainloop(void)
 	    if (cur_tool == TOOL_STAMP)
 	    {
 	      stamp_xor(old_x, old_y);
-
-	      update_screen(old_x - (CUR_STAMP_W + 1) / 2 + r_canvas.x,
-			    old_y - (CUR_STAMP_H + 1) / 2 + r_canvas.y,
-			    old_x + (CUR_STAMP_W + 1) / 2 + r_canvas.x,
-			    old_y + (CUR_STAMP_H + 1) / 2 + r_canvas.y);
 	    }
 	    else
 	    {
 	      rect_xor(old_x - w / 2, old_y - h / 2,
 		       old_x + w / 2, old_y + h / 2);
-
-	      update_screen(old_x - w / 2 + r_canvas.x,
-			    old_y - h / 2 + r_canvas.y,
-			    old_x + w / 2 + r_canvas.x,
-			    old_y + h / 2 + r_canvas.y);
 	    }
 	  }
 
@@ -3954,21 +3947,11 @@ static void mainloop(void)
 	    if (cur_tool == TOOL_STAMP)
 	    {
 	      stamp_xor(new_x, new_y);
-
-	      update_screen(old_x - (CUR_STAMP_W + 1) / 2 + r_canvas.x,
-			    old_y - (CUR_STAMP_H + 1) / 2 + r_canvas.y,
-			    old_x + (CUR_STAMP_W + 1) / 2 + r_canvas.x,
-			    old_y + (CUR_STAMP_H + 1) / 2 + r_canvas.y);
 	    }
 	    else
 	    {
 	      rect_xor(new_x - w / 2, new_y - h / 2,
 		       new_x + w / 2, new_y + h / 2);
-
-	      update_screen(new_x - w / 2 + r_canvas.x,
-			    new_y - h / 2 + r_canvas.y,
-			    new_x + w / 2 + r_canvas.x,
-			    new_y + h / 2 + r_canvas.y);
 	    }
 	  }
 	}
@@ -4026,12 +4009,6 @@ static void draw_blinking_cursor(void)
   line_xor(cursor_x + cursor_textwidth, cursor_y,
 	   cursor_x + cursor_textwidth,
 	   cursor_y + TuxPaint_Font_FontHeight(getfonthandle(cur_font)));
-
-  update_screen(cursor_x + r_canvas.x + cursor_textwidth,
-		cursor_y + r_canvas.y,
-		cursor_x + r_canvas.x + cursor_textwidth,
-		cursor_y + r_canvas.y +
-		TuxPaint_Font_FontHeight(getfonthandle(cur_font)));
 }
 
 /* Draw using the current brush: */
@@ -4094,14 +4071,13 @@ static void brush_draw(int x1, int y1, int x2, int y2, int update)
 
       if (y1 > y2)
       {
-	for (y = y1; y >= y2; y--)
-	  blit_brush(x1, y, direction);
+	y = y1;
+	y1 = y2;
+	y2 = y;
       }
-      else
-      {
-	for (y = y1; y <= y2; y++)
-	  blit_brush(x1, y, direction);
-      }
+
+      for (y = y1; y <= y2; y++)
+	blit_brush(x1, y, direction);
 
       x1 = x1 + dx;
     }
@@ -4743,7 +4719,7 @@ static void stamp_draw(int x, int y)
 
 /* Store canvas into undo buffer: */
 
-static void rec_undo_buffer(void)
+void rec_undo_buffer(void)
 {
   int wanna_update_toolbar;
 
@@ -6600,15 +6576,11 @@ static void setup(int argc, char *argv[])
     {
       if (i < argc - 1)
       {
-        char *dir;
-          
 	if (savedir != NULL)
 	  free(savedir);
 
-	dir = strdup(argv[i + 1]);
-	remove_slash(dir);
-      savedir = replace_tilde(dir);
-      free(dir);
+	savedir = strdup(argv[i + 1]);
+	remove_slash(savedir);
 	i++;
       }
       else
@@ -6624,15 +6596,11 @@ static void setup(int argc, char *argv[])
     {
       if (i < argc - 1)
       {
-        char *dir;
-          
 	if (datadir != NULL)
 	  free(datadir);
 
-	dir = strdup(argv[i + 1]);
-	remove_slash(dir);
-      datadir = replace_tilde(dir);
-      free(dir);
+	datadir = strdup(argv[i + 1]);
+	remove_slash(datadir);
 	i++;
       }
       else
@@ -7249,7 +7217,7 @@ static void setup(int argc, char *argv[])
   printf("%s\n", tmp_str);
 #endif
 
-  snprintf(tmp_str, sizeof(tmp_str), "© 2002–2008 Bill Kendrick et al.");
+  snprintf(tmp_str, sizeof(tmp_str), "© 2002–2007 Bill Kendrick et al.");
   tmp_surf = render_text(medium_font, tmp_str, black);
   dest.x = 10;
   dest.y = WINDOW_HEIGHT - img_progress->h - (tmp_surf->h * 2);
@@ -7403,6 +7371,9 @@ static void setup(int argc, char *argv[])
 
     undo_starters[i] = UNDO_STARTER_NONE;
   }
+  
+  /* initialize selection buffer */
+  selectionInit(canvas);
 
 
 
@@ -9326,7 +9297,6 @@ static SDL_Surface *zoom(SDL_Surface * src, int new_w, int new_h)
       one_minus_x = 1.0 - fraction_x;
       one_minus_y = 1.0 - fraction_y;
 
-#if VIDEO_BPP==32
       SDL_GetRGBA(getpixel(src, floor_x, floor_y), src->format,
                   &r1, &g1, &b1, &a1);
       SDL_GetRGBA(getpixel(src, ceil_x,  floor_y), src->format,
@@ -9335,40 +9305,6 @@ static SDL_Surface *zoom(SDL_Surface * src, int new_w, int new_h)
                   &r3, &g3, &b3, &a3);
       SDL_GetRGBA(getpixel(src, ceil_x,  ceil_y),  src->format,
                   &r4, &g4, &b4, &a4);
-#else
-      {
-      Uint8 r, g, b, a;
-      r = g = b = a = 0; // Unused, bah!
-
-      SDL_GetRGBA(getpixel(src, floor_x, floor_y), src->format,
-                  &r, &g, &b, &a);
-      r1 = (float) r;
-      g1 = (float) g;
-      b1 = (float) b;
-      a1 = (float) a;
-
-      SDL_GetRGBA(getpixel(src, ceil_x,  floor_y), src->format,
-                  &r, &g, &b, &a);
-      r2 = (float) r;
-      g2 = (float) g;
-      b2 = (float) b;
-      a2 = (float) a;
-
-      SDL_GetRGBA(getpixel(src, floor_x, ceil_y),  src->format,
-                  &r, &g, &b, &a);
-      r3 = (float) r;
-      g3 = (float) g;
-      b3 = (float) b;
-      a3 = (float) a;
-
-      SDL_GetRGBA(getpixel(src, ceil_x,  ceil_y),  src->format,
-                  &r, &g, &b, &a);
-      r4 = (float) r;
-      g4 = (float) g;
-      b4 = (float) b;
-      a4 = (float) a;
-      }
-#endif
 
       n1 = (one_minus_x * r1 + fraction_x * r2);
       n2 = (one_minus_x * r3 + fraction_x * r4);
@@ -9398,10 +9334,9 @@ static SDL_Surface *zoom(SDL_Surface * src, int new_w, int new_h)
 }
 #endif
 
-
 // XOR must show up on black, white, 0x7f grey, and 0x80 grey.
 // XOR must be exactly 100% perfectly reversable.
-static void xorpixel(int x, int y)
+void xorpixel(int x, int y)
 {
   Uint8 *p;
   int BytesPerPixel;
@@ -9652,14 +9587,17 @@ static void render_brush(void)
   brush_counter = 0;
 }
 
-
-/* Draw a XOR line: */
-
-static void line_xor(int x1, int y1, int x2, int y2)
+static void line_xor2(int x1, int y1, int x2, int y2, int update)
 {
   int dx, dy, y, num_drawn;
   float m, b;
-
+  
+  // remember the initial values (which we're going to modify)
+  // so that we can update the screen at the right bounds
+  int initx1 = x1;
+  int inity1 = y1;
+  int initx2 = x2;
+  int inity2 = y2;
 
   /* Kludgey, but it works: */
 
@@ -9728,8 +9666,23 @@ static void line_xor(int x1, int y1, int x2, int y2)
   }
 
   //SDL_UnlockSurface(screen);
+  if (update != 0)
+  {
+	update_screen(initx1 + r_canvas.x, inity1 + r_canvas.y, initx2 + r_canvas.x, inity2 + r_canvas.y);
+  }
 }
 
+/* Draw a XOR line: */
+static void line_xor(int x1, int y1, int x2, int y2)
+{
+	line_xor2(x1, y1, x2, y2, 1);
+}
+
+/* Draw a XOR line without updating the screen */
+static void line_xor_no_update(int x1, int y1, int x2, int y2)
+{
+	line_xor2(x1, y1, x2, y2, 0);
+}
 
 /* Draw a XOR rectangle: */
 
@@ -9759,10 +9712,90 @@ static void rect_xor(int x1, int y1, int x2, int y2)
   if (y2 >= (48 * 7) + 40 + HEIGHTOFFSET)
     y2 = (48 * 7) + 40 + HEIGHTOFFSET - 1;
 
-  line_xor(x1, y1, x2, y1);
-  line_xor(x2, y1, x2, y2);
-  line_xor(x2, y2, x1, y2);
-  line_xor(x1, y2, x1, y1);
+  line_xor_no_update(x1, y1, x2, y1);
+  line_xor_no_update(x2, y1, x2, y2);
+  line_xor_no_update(x2, y2, x1, y2);
+  line_xor_no_update(x1, y2, x1, y1);
+  update_screen(x1 + r_canvas.x, y1 + r_canvas.y, x2 + r_canvas.x, y2 + r_canvas.y);
+}
+
+void rect_xor_to_screen(int x1, int y1, int x2, int y2, int screencoords)
+{
+	if (screencoords == 1)
+	{
+		x1 -= r_canvas.x;
+		x2 -= r_canvas.x;
+		y1 -= r_canvas.y;
+		y2 -= r_canvas.y;
+	}
+	rect_xor(x1, y1, x2, y2);
+}
+
+void shape_xor_to_screen(int x1, int y1, int x2, int y2, int shape_type, int screencoords)
+{
+	if (screencoords == 1)
+	{
+		x1 -= r_canvas.x;
+		x2 -= r_canvas.x;
+		y1 -= r_canvas.y;
+		y2 -= r_canvas.y;
+	}
+	int old_shape = cur_shape;
+	cur_shape = shape_type;
+	do_shape((x1 + x2) / 2, (y1 + y2) / 2, x2, y2, 0, 0);
+	cur_shape = old_shape;
+}
+
+void line_xor_to_screen(int x1, int y1, int x2, int y2, int screencoords)
+{
+	if (screencoords == 1)
+	{
+		x1 -= r_canvas.x;
+		x2 -= r_canvas.x;
+		y1 -= r_canvas.y;
+		y2 -= r_canvas.y;
+	}
+	line_xor(x1, y1, x2, y2);
+}
+
+void xorpixel_to_screen(int x, int y, int screencoords)
+{
+	if (screencoords == 1)
+	{
+		x -= r_canvas.x;
+		y -= r_canvas.y;
+	}
+	xorpixel(x,y);
+}
+
+// Erases a rectangle from an SDL_Surface,
+// replacing it with the background color or image.
+void erase_rect_from_surface(SDL_Surface *surface, SDL_Rect *rect, int screencoords)
+{
+	// modifying their rect would be rude,
+	// so let's copy it!
+	SDL_Rect temp = *rect;
+	if (screencoords == 1)
+	{
+		temp.x -= r_canvas.x;
+		temp.y -= r_canvas.y;
+	}
+   if (img_starter_bkgd == NULL)
+    {
+      SDL_FillRect(surface, &temp, SDL_MapRGB(surface->format,
+					     canvas_color_r,
+					     canvas_color_g,
+					     canvas_color_b));
+    }
+    else
+    {
+      SDL_BlitSurface(img_starter_bkgd, &temp, canvas, &temp);
+    }
+}
+
+static void erase_rect(SDL_Rect *rect)
+{
+	erase_rect_from_surface(canvas, rect, 0);
 }
 
 
@@ -9787,17 +9820,7 @@ static void do_eraser(int x, int y)
     dest.w = sz;
     dest.h = sz;
 
-    if (img_starter_bkgd == NULL)
-    {
-      SDL_FillRect(canvas, &dest, SDL_MapRGB(canvas->format,
-					     canvas_color_r,
-					     canvas_color_g,
-					     canvas_color_b));
-    }
-    else
-    {
-      SDL_BlitSurface(img_starter_bkgd, &dest, canvas, &dest);
-    }
+    erase_rect(&dest);
   }
   else
   {
@@ -10987,12 +11010,6 @@ static void load_starter_id(char *saved_id)
 
     fclose(fi);
   }
-  else
-  {
-    canvas_color_r = 255;
-    canvas_color_g = 255;
-    canvas_color_b = 255;
-  }
 
   free(rname);
 }
@@ -11733,6 +11750,8 @@ static void cleanup(void)
     free(stamp_data[j]);
   }
   free_surface(&active_stamp);
+  
+  selectionCleanup();
 
   free_surface_array(img_brushes, num_brushes);
   free(brushes_frames);
@@ -12677,44 +12696,1095 @@ static int do_quit(int tool)
   return (done);
 }
 
-
-
-/* Open a saved image: */
-
 #define PLACE_COLOR_PALETTE (-1)
 #define PLACE_SAVED_DIR 0
 #define PLACE_PERSONAL_STARTERS_DIR 1
 #define PLACE_STARTERS_DIR 2
 #define NUM_PLACES_TO_LOOK 3
 
+#define SLIDESHOWTEXT "Choose the pictures you want, " "then click “Play”."
 
-/* FIXME: This, do_slideshow() and do_new_dialog() should be combined
-   and modularized! */
 
-int do_open(void)
+int 
+loadthumbs(struct dirent2 * fs, char **d_names, char *dirname[], SDL_Surface ** thumbs, int num_files,
+	   char **d_exts, int *d_places, int num_files_in_dirs, int setcur, int *cur, int *which)
 {
-  SDL_Surface *img, *img1, *img2;
-  int things_alloced;
-  SDL_Surface **thumbs = NULL;
-  DIR *d;
-  struct dirent *f;
-  struct dirent2 *fs;
-  int place;
-  char *dirname[NUM_PLACES_TO_LOOK];
-  char *rfname;
-  char **d_names = NULL, **d_exts = NULL;
-  int *d_places;
-  FILE *fi;
-  char fname[1024];
-  int num_files, i, done, slideshow, update_list, want_erase, cur, which,
-    num_files_in_dirs, j, any_saved_files;
+  SDL_Surface    *img, *img1, *img2;
+  int             j;
+  char            fname[1024];
+  FILE           *fi;
+  struct dirent  *f;
+
+  for (j = 0; j < num_files_in_dirs; j++)
+  {
+    f = &(fs[j].f);
+
+    show_progress_bar(screen);
+
+    if (f != NULL)
+    {
+      debug(f->d_name);
+
+      if (strcasestr(f->d_name, "-t.") == NULL &&
+	  strcasestr(f->d_name, "-back.") == NULL)
+      {
+		if (strcasestr(f->d_name, FNAME_EXTENSION) != NULL
+			/* Support legacy BMP files for load: */
+			|| strcasestr(f->d_name, ".bmp") != NULL)
+		{
+		  strcpy(fname, f->d_name);
+		  if (strcasestr(fname, FNAME_EXTENSION) != NULL)
+		  {
+			strcpy((char *) strcasestr(fname, FNAME_EXTENSION), "");
+			d_exts[num_files] = strdup(FNAME_EXTENSION);
+		  }
+
+		  if (strcasestr(fname, ".bmp") != NULL)
+		  {
+			strcpy((char *) strcasestr(fname, ".bmp"), "");
+			d_exts[num_files] = strdup(".bmp");
+		  }
+
+		  d_names[num_files] = strdup(fname);
+		  d_places[num_files] = fs[j].place;
+
+		  if (setcur)
+		  {
+			/*
+			 * Is it the 'current' file we just loaded? We'll make it the
+			 * current selection!
+			 */
+
+			if (strcmp(d_names[num_files], file_id) == 0)
+			{
+			  *which = num_files;
+			  *cur = (*which / 4) * 4;
+
+			  /*
+			   * Center the cursor (useful for when the last item is selected
+			   * first!)
+			   */
+
+			  if (*cur - 8 >= 0)
+				*cur = *cur - 8;
+			  else if (*cur - 4 >= 0)
+				*cur = *cur - 4;
+			}
+		  }
+
+		  /*
+		   * FIXME: Try to center list on whatever was selected in do_open()
+		   * when the slideshow button was clicked.
+		   */
+
+		  /* Try to load thumbnail first: */
+
+		  snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
+			   dirname[d_places[num_files]], d_names[num_files]);
+		  debug("Loading thumbnail...");
+		  debug(fname);
+		  img = IMG_Load(fname);
+		  if (img == NULL)
+		  {
+			/*
+			 * No thumbnail in the new location ("saved/.thumbs"), try the
+			 * old location ("saved/"):
+			 */
+
+			snprintf(fname, sizeof(fname), "%s/%s-t.png",
+				 dirname[d_places[num_files]], d_names[num_files]);
+			debug(fname);
+
+			img = IMG_Load(fname);
+		  }
+
+
+		  if (img != NULL)
+		  {
+			/* Loaded the thumbnail from one or the other location */
+
+			debug("Thumbnail loaded, scaling");
+			show_progress_bar(screen);
+
+			img1 = SDL_DisplayFormat(img);
+			SDL_FreeSurface(img);
+
+			if (img1 != NULL)
+			{
+			  //if too big, or too small in both dimensions, rescale it
+			  // (for now:using old thumbnail as source for high speed, low quality)
+			  if (img1->w > THUMB_W - 20 || img1->h > THUMB_H - 20
+				  || (img1->w < THUMB_W - 20 && img1->h < THUMB_H - 20))
+			  {
+				img2 = thumbnail(img1, THUMB_W - 20, THUMB_H - 20, 0);
+				SDL_FreeSurface(img1);
+				img1 = img2;
+			  }
+
+			  thumbs[num_files] = img1;
+
+			  if (thumbs[num_files] == NULL)
+			  {
+				fprintf(stderr,
+				  "\nError: Couldn't create a thumbnail of "
+				  "saved image!\n" "%s\n", fname);
+			  }
+			  else
+				num_files++;
+			}
+		  }
+		  else
+		  {
+			/* No thumbnail - load original: */
+
+			/* Make sure we have a ~/.tuxpaint/saved directory: */
+			if (make_directory("saved", "Can't create user data directory"))
+			{
+			  /* (Make sure we have a .../saved/.thumbs/ directory:) */
+			  make_directory("saved/.thumbs", "Can't create user data thumbnail directory");
+			}
+
+			img = NULL;
+
+			if (d_places[num_files] == PLACE_STARTERS_DIR ||
+				d_places[num_files] == PLACE_PERSONAL_STARTERS_DIR)
+			{
+			  /*
+			   * Try to load a starter's background image, first! If it
+			   * exists, it should give a better idea of what the starter
+			   * looks like, compared to the overlay image...
+			   */
+
+			  /* FIXME: Add .jpg support -bjk 2007.03.22 */
+
+			  /* (Try JPEG first) */
+			  snprintf(fname, sizeof(fname), "%s/%s-back.jpeg",
+				   dirname[d_places[num_files]], d_names[num_files]);
+
+			  img = IMG_Load(fname);
+
+
+			  if (img == NULL)
+			  {
+				/* (Try PNG next) */
+				snprintf(fname, sizeof(fname), "%s/%s-back.png",
+					 dirname[d_places[num_files]], d_names[num_files]);
+
+				img = IMG_Load(fname);
+			  }
+
+	#ifndef NOSVG
+			  if (img == NULL)
+			  {
+				/* (Try SVG next) */
+				snprintf(fname, sizeof(fname), "%s/%s-back.svg",
+					 dirname[d_places[num_files]], d_names[num_files]);
+
+				img = load_svg(fname);
+			  }
+	#endif
+			}
+
+
+			if (img == NULL)
+			{
+			  /*
+			   * Didn't load a starter background (or didn't try!), try
+			   * loading the actual image...
+			   */
+
+			  snprintf(fname, sizeof(fname), "%s/%s",
+				   dirname[d_places[num_files]], f->d_name);
+			  debug(fname);
+			  img = myIMG_Load(fname);
+			}
+
+
+			show_progress_bar(screen);
+
+			if (img == NULL)
+			{
+			  fprintf(stderr,
+				  "\nWarning: I can't open one of the saved files!\n"
+				  "%s\n"
+				  "The Simple DirectMedia Layer error that "
+				  "occurred was:\n" "%s\n\n", fname, SDL_GetError());
+
+			  free(d_names[num_files]);
+			  free(d_exts[num_files]);
+			}
+			else
+			{
+			  /* Turn it into a thumbnail: */
+
+			  img1 = SDL_DisplayFormatAlpha(img);
+			  img2 = thumbnail2(img1, THUMB_W - 20, THUMB_H - 20, 0, 0);
+			  SDL_FreeSurface(img1);
+
+			  show_progress_bar(screen);
+
+			  thumbs[num_files] = SDL_DisplayFormat(img2);
+			  SDL_FreeSurface(img2);
+
+			  SDL_FreeSurface(img);
+
+			  if (thumbs[num_files] == NULL)
+			  {
+				fprintf(stderr,
+					"\nError: Couldn't create a thumbnail of "
+					"saved image!\n" "%s\n", fname);
+			  }
+			  else
+			  {
+				show_progress_bar(screen);
+
+
+				/*
+				 * Let's save this thumbnail, so we don't have to create it
+				 * again next time 'Open' is called:
+				 */
+
+				if (d_places[num_files] == PLACE_SAVED_DIR)
+				{
+				  debug("Saving thumbnail for this one!");
+
+				  snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
+					   dirname[d_places[num_files]], d_names[num_files]);
+
+				  fi = fopen(fname, "wb");
+				  if (fi == NULL)
+				  {
+					fprintf(stderr,
+						"\nError: Couldn't save thumbnail of "
+						"saved image!\n"
+						"%s\n"
+						"The error that occurred was:\n"
+						"%s\n\n", fname, strerror(errno));
+				  }
+				  else
+				  {
+					do_png_save(fi, fname, thumbs[num_files]);
+				  }
+
+				  show_progress_bar(screen);
+				}
+
+
+				num_files++;
+			  }
+			}
+		  }
+		}
+		else
+		{
+		  /*
+		   * It was a thumbnail file ("...-t.png") or immutable scene
+		   * starter's overlay layer ("...-front.png")
+		   */
+		}
+      }
+    }
+  }
+  return num_files;
+}
+
+int 
+anysavedfiles(void)
+{
+  DIR            *d;
+  struct dirent  *f;
+
+  d = opendir(get_fname("saved", DIR_SAVE));
+  if (d != NULL)
+  {
+    if (readdir(d) != NULL)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+#define SAVED_DIR_MASK 0x001
+#define PERSONAL_STARTERS_DIR_MASK 0x010
+#define STARTERS_DIR_MASK 0x100
+
+int 
+readimagedirs(int dirmask, char *dirname[], struct dirent2 ** fs)
+{
+  DIR            *d;
+  struct dirent  *f;
+  int             places_to_look;
+  int             num_files_in_dirs = 0;
+
+  int             things_alloced = 32;
+
+  *fs = (struct dirent2 *) malloc(sizeof(struct dirent2) * things_alloced);
+
+  for (places_to_look = 0;
+       places_to_look < NUM_PLACES_TO_LOOK; places_to_look++)
+  {
+    dirname[places_to_look] = NULL;
+    if (places_to_look == PLACE_SAVED_DIR && (dirmask & SAVED_DIR_MASK) != 0)
+    {
+      /* First, check for saved-images: */
+      dirname[places_to_look] = get_fname("saved", DIR_SAVE);
+    }
+    else if (places_to_look == PLACE_PERSONAL_STARTERS_DIR && (dirmask & PERSONAL_STARTERS_DIR_MASK) != 0)
+    {
+      /* Check for coloring-book style 'starter' imaes in our folder: */
+      dirname[places_to_look] = get_fname("starters", DIR_DATA);
+    }
+    else if (places_to_look == PLACE_STARTERS_DIR && (dirmask & STARTERS_DIR_MASK) != 0)
+    {
+      /*
+       * Finally, check for system-wide coloring-book style 'starter' images:
+       */
+      dirname[places_to_look] = strdup(DATA_PREFIX "starters");
+    }
+
+    if (dirname[places_to_look] != NULL)
+    {
+      /* Read directory of images and build thumbnails: */
+
+      d = opendir(dirname[places_to_look]);
+
+      if (d != NULL)
+      {
+		/* Gather list of files (for sorting): */
+
+		do
+		{
+		  f = readdir(d);
+
+		  if (f != NULL)
+		  {
+			memcpy(&((*fs)[num_files_in_dirs].f), f, sizeof(struct dirent));
+			(*fs)[num_files_in_dirs].place = places_to_look;
+
+			num_files_in_dirs++;
+
+			if (num_files_in_dirs >= things_alloced)
+			{
+			  things_alloced = things_alloced + 32;
+
+			  //FIXME:Valgrind says this is leaked - bjk 2007.07 .19
+			  *fs = (struct dirent2 *) realloc(*fs,
+				sizeof(struct dirent2) * things_alloced);
+			}
+		  }
+		}
+		while (f != NULL);
+
+		closedir(d);
+      }
+    }
+  }
+  return num_files_in_dirs;
+}
+
+int 
+handlenavigationkeys(SDLKey key, int num_files, int *whichnum, int *curnum, int *done, int *update_list)
+{
+  int             keyhandled = 1;
+  int             which = *whichnum;
+  int             cur = *curnum;
+
+  if (key == SDLK_LEFT)
+  {
+    if (which > 0)
+    {
+      which--;
+
+      if (which < cur)
+	cur = cur - 4;
+
+      *update_list = 1;
+    }
+  }
+  else if (key == SDLK_RIGHT)
+  {
+    if (which < num_files - 1)
+    {
+      which++;
+
+      if (which >= cur + 16)
+	cur = cur + 4;
+
+      *update_list = 1;
+    }
+  }
+  else if (key == SDLK_UP)
+  {
+    if (which >= 0)
+    {
+      which = which - 4;
+
+      if (which < 0)
+	which = 0;
+
+      if (which < cur)
+	cur = cur - 4;
+
+      *update_list = 1;
+    }
+  }
+  else if (key == SDLK_DOWN)
+  {
+    if (which < num_files)
+    {
+      which = which + 4;
+
+      if (which >= num_files)
+	which = num_files - 1;
+
+      if (which >= cur + 16)
+	cur = cur + 4;
+
+      *update_list = 1;
+    }
+  }
+  else if (key == SDLK_RETURN || key == SDLK_SPACE)
+  {
+    /* Open */
+
+    *done = 1;
+    playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
+  }
+  else if (key == SDLK_ESCAPE)
+  {
+    /* Go back: */
+
+    which = -1;
+    *done = 1;
+    playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
+  }
+  else
+  {
+    keyhandled = 0;
+  }
+  *curnum = cur;
+  *whichnum = which;
+  return keyhandled;
+}
+
+
+enum
+{
+  BTN_ARROWS,
+  BTN_OPEN,
+  BTN_SLIDESHOW,
+  BTN_BACK,
+  BTN_ERASE,
+  BTN_PLAY,
+  BTN_SPEEDCONTROL
+};
+
+#define open_dialog_numbuttons 5
+static int      open_dialog_buttons[open_dialog_numbuttons] = {
+  BTN_ARROWS,
+  BTN_OPEN,
+  BTN_SLIDESHOW,
+  BTN_BACK,
+  BTN_ERASE
+};
+
+#define new_dialog_numbuttons 3
+static int      new_dialog_buttons[new_dialog_numbuttons] = {
+  BTN_ARROWS,
+  BTN_OPEN,
+  BTN_BACK
+};
+
+#define slideshow_dialog_numbuttons 4
+static int      slideshow_dialog_buttons[slideshow_dialog_numbuttons] = {
+  BTN_ARROWS,
+  BTN_PLAY,
+  BTN_BACK,
+  BTN_SPEEDCONTROL
+};
+
+void 
+updatescreen2(int *buttonlist, int numbuttons, int cur, int which, int *d_places,
+	      int num_files, SDL_Surface ** thumbs, int rendernumbers, int num_selected,
+		  int *selected, int speed, int any_saved_files)
+{
   SDL_Rect dest;
-  SDL_Event event;
-  SDLKey key;
-  Uint32 last_click_time;
-  int last_click_which, last_click_button;
-  int places_to_look;
-  int opened_something;
+
+  /* Erase screen: */
+
+  dest.x = 96;
+  dest.y = 0;
+  dest.w = WINDOW_WIDTH - 96 - 96;
+  dest.h = 48 * 7 + 40 + HEIGHTOFFSET;
+
+  SDL_FillRect(screen, &dest, SDL_MapRGB(screen->format,
+					 255, 255, 255));
+
+
+  /* Draw icons: */
+  int i = 0;
+
+  for (i = cur; i < cur + 16 && i < num_files; i++)
+  {
+    /* Draw cursor: */
+
+    dest.x = THUMB_W * ((i - cur) % 4) + 96;
+    dest.y = THUMB_H * ((i - cur) / 4) + 24;
+
+    if (d_places[i] == PLACE_SAVED_DIR)
+    {
+      if (i == which)
+      {
+	    SDL_BlitSurface(img_cursor_down, NULL, screen, &dest);
+      }
+      else
+	    SDL_BlitSurface(img_cursor_up, NULL, screen, &dest);
+    }
+    else
+    {
+      if (i == which)
+      {
+	    SDL_BlitSurface(img_cursor_starter_down, NULL, screen, &dest);
+      }
+      else
+	    SDL_BlitSurface(img_cursor_starter_up, NULL, screen, &dest);
+    }
+
+    dest.x = THUMB_W * ((i - cur) % 4) + 96 + 10 +
+      (THUMB_W - 20 - thumbs[i]->w) / 2;
+    dest.y = THUMB_H * ((i - cur) / 4) + 24 + 10 +
+      (THUMB_H - 20 - thumbs[i]->h) / 2;
+
+    if (thumbs[i] != NULL)
+      SDL_BlitSurface(thumbs[i], NULL, screen, &dest);
+
+
+    if (rendernumbers != 0)
+    {
+      int found = -1;
+      int j;
+
+      for (j = 0; j < num_selected && found == -1; j++)
+      {
+		if (selected[j] == i)
+		  found = j;
+      }
+
+      if (found != -1)
+      {
+		dest.x = (THUMB_W * ((i - cur) % 4) + 96 + 10 +
+			  (THUMB_W - 20 - thumbs[i]->w) / 2) + thumbs[i]->w;
+		dest.y = (THUMB_H * ((i - cur) / 4) + 24 + 10 +
+			  (THUMB_H - 20 - thumbs[i]->h) / 2) + thumbs[i]->h;
+
+		draw_selection_digits(dest.x, dest.y, found + 1);
+      }
+    }
+  }
+
+  for (i = 0; i < numbuttons; i++)
+  {
+
+    if (buttonlist[i] == BTN_ARROWS)
+    {
+      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
+      dest.y = 0;
+
+      if (cur > 0)
+		SDL_BlitSurface(img_scroll_up, NULL, screen, &dest);
+      else
+		SDL_BlitSurface(img_scroll_up_off, NULL, screen, &dest);
+
+      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+
+      if (cur < num_files - 16)
+		SDL_BlitSurface(img_scroll_down, NULL, screen, &dest);
+      else
+		SDL_BlitSurface(img_scroll_down_off, NULL, screen, &dest);
+    }
+    else if (buttonlist[i] == BTN_OPEN)
+    {
+      dest.x = 96;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+      SDL_BlitSurface(img_open, NULL, screen, &dest);
+
+      dest.x = 96 + (48 - img_openlabels_open->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_open->h;
+      SDL_BlitSurface(img_openlabels_open, NULL, screen, &dest);
+    }
+    else if (buttonlist[i] == BTN_SLIDESHOW)
+    {
+      dest.x = 96 + 48;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+      if (any_saved_files)
+		SDL_BlitSurface(img_btn_up, NULL, screen, &dest);
+      else
+		SDL_BlitSurface(img_btn_off, NULL, screen, &dest);
+
+      dest.x = 96 + 48;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+      SDL_BlitSurface(img_slideshow, NULL, screen, &dest);
+
+      dest.x = 96 + 48 + (48 - img_openlabels_slideshow->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_slideshow->h;
+      SDL_BlitSurface(img_openlabels_slideshow, NULL, screen, &dest);
+    }
+    else if (buttonlist[i] == BTN_BACK)
+    {
+      dest.x = WINDOW_WIDTH - 96 - 48;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+      SDL_BlitSurface(img_back, NULL, screen, &dest);
+
+      dest.x = WINDOW_WIDTH - 96 - 48 + (48 - img_openlabels_back->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_back->h;
+      SDL_BlitSurface(img_openlabels_back, NULL, screen, &dest);
+    }
+    else if (buttonlist[i] == BTN_ERASE)
+    {
+      dest.x = WINDOW_WIDTH - 96 - 48 - 48;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+
+      if (d_places[which] != PLACE_STARTERS_DIR &&
+	  d_places[which] != PLACE_PERSONAL_STARTERS_DIR)
+		SDL_BlitSurface(img_erase, NULL, screen, &dest);
+      else
+		SDL_BlitSurface(img_btn_off, NULL, screen, &dest);
+
+      dest.x = WINDOW_WIDTH - 96 - 48 - 48 + (48 - img_openlabels_erase->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_erase->h;
+      SDL_BlitSurface(img_openlabels_erase, NULL, screen, &dest);
+    }
+    else if (buttonlist[i] == BTN_PLAY)
+    {
+      dest.x = 96;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+      SDL_BlitSurface(img_play, NULL, screen, &dest);
+
+      dest.x = 96 + (48 - img_openlabels_play->w) / 2;
+      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_play->h;
+      SDL_BlitSurface(img_openlabels_play, NULL, screen, &dest);
+
+    }
+    else if (buttonlist[i] == BTN_SPEEDCONTROL)
+    {
+      int             speeds = 10;
+      float           x_per = 96.0 / speeds;
+      float           y_per = 48.0 / speeds;
+      int             xx, yy;
+      int             k;
+      SDL_Surface    *btn, *blnk;
+
+      for (k = 0; k < speeds; k++)
+      {
+		xx = ceil(x_per);
+		yy = ceil(y_per * k);
+
+		if (k <= speed)
+		  btn = thumbnail(img_btn_down, xx, yy, 0);
+		else
+		  btn = thumbnail(img_btn_up, xx, yy, 0);
+
+		blnk = thumbnail(img_btn_off, xx, 48 - yy, 0);
+
+		/* FIXME: Check for NULL! */
+
+		dest.x = 96 + 48 + (k * x_per);
+		dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+		SDL_BlitSurface(blnk, NULL, screen, &dest);
+
+		dest.x = 96 + 48 + (k * x_per);
+		dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - (y_per * k);
+		SDL_BlitSurface(btn, NULL, screen, &dest);
+
+		SDL_FreeSurface(btn);
+		SDL_FreeSurface(blnk);
+      }
+    }
+  }
+
+  SDL_Flip(screen);
+
+}
+
+void 
+updatescreen(int *buttonlist, int numbuttons, int cur, int which, int *d_places, int num_files, SDL_Surface ** thumbs)
+{
+  updatescreen2(buttonlist, numbuttons, cur, which, d_places, num_files, thumbs, 0, 0, NULL, 0, 0);
+}
+
+/*surely there must be a library function for this...
+NOTE:if this is too slow we can switch it
+to a boolean table lookup */
+int inlist(int *list, int listsize, int target)
+{
+  int i;
+  for (i = 0; i < listsize; i++)
+  {
+    if (list[i] == target)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+//FIXME:these params need to be packed up into a struct
+void 
+dialog_handlemouse(SDL_Event event, int *buttonlist, int numbuttons,
+       int *pwhich, int *pcur, int num_files, int *pupdate_list, int *pdone,
+	 int *pgo_back, int any_saved_files, int *pslideshow, int *d_places,
+		   int *pwant_erase, int *pspeed, int *pplayshow)
+{
+  int             which = *pwhich;
+  int             cur = *pcur;
+  int             update_list = *pupdate_list;
+  int             done = *pdone;
+  int             go_back = *pgo_back;
+  int             slideshow = *pslideshow;
+  int             want_erase = *pwant_erase;
+  int             speed = *pspeed;
+  int             playshow = *pplayshow;
+
+  static int      last_click_which = -1;
+  static Uint32   last_click_time = 0;
+  static int      last_click_button = -1;
+  int             commandleftborder = 0;
+
+  if (inlist(buttonlist, numbuttons, BTN_OPEN) != 0)
+  {
+    commandleftborder += 48;
+  }
+  if (inlist(buttonlist, numbuttons, BTN_SLIDESHOW) != 0)
+  {
+    commandleftborder += 48;
+  }
+  if (inlist(buttonlist, numbuttons, BTN_PLAY) != 0)
+  {
+    commandleftborder += 48;
+  }
+  if (inlist(buttonlist, numbuttons, BTN_SPEEDCONTROL) != 0)
+  {
+    commandleftborder += 96;
+  }
+  int commandrightborder = 48;
+
+  if (inlist(buttonlist, numbuttons, BTN_ERASE) != 0)
+  {
+    commandrightborder += 48;
+  }
+
+  if (event.type == SDL_MOUSEBUTTONDOWN &&
+      valid_click(event.button.button))
+  {
+    if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
+	event.button.y >= 24 &&
+	event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 48))
+    {
+      /* Picked an icon! */
+
+      int old_which = which;
+
+      which = ((event.button.x - 96) / (THUMB_W) +
+	       (((event.button.y - 24) / THUMB_H) * 4)) + cur;
+
+      if (which < num_files)
+      {
+		playsound(screen, 1, SND_BLEEP, 1, event.button.x, SNDDIST_NEAR);
+		update_list = 1;
+
+
+		if (which == last_click_which &&
+			SDL_GetTicks() < last_click_time + 1000 &&
+			event.button.button == last_click_button)
+		{
+		  /* Double-click! */
+
+		  done = 1;
+		}
+
+		last_click_which = which;
+		last_click_time = SDL_GetTicks();
+		last_click_button = event.button.button;
+      }
+      else
+		which = old_which;
+    }
+    else if (event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
+	     event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2)
+    {
+      if (event.button.y < 24)
+      {
+		/* Up scroll button: */
+
+		if (cur > 0)
+		{
+		  cur = cur - 4;
+		  update_list = 1;
+		  playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
+				SNDDIST_NEAR);
+
+		  if (cur == 0)
+			do_setcursor(cursor_arrow);
+		}
+
+		if (which >= cur + 16)
+		  which = which - 4;
+      }
+      else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
+	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24))
+      {
+		/* Down scroll button: */
+
+		if (cur < num_files - 16)
+		{
+		  cur = cur + 4;
+		  update_list = 1;
+		  playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
+				SNDDIST_NEAR);
+
+		  if (cur >= num_files - 16)
+			do_setcursor(cursor_arrow);
+		}
+
+		if (which < cur)
+		  which = which + 4;
+      }
+    }
+    else if (event.button.x >= 96 && event.button.x < 96 + 48 &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) && inlist(buttonlist, numbuttons, BTN_OPEN) != 0)
+    {
+      /* Open */
+
+      done = 1;
+      playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
+    }
+    else if (event.button.x >= 96 + 48 && event.button.x < 96 + 48 + 48 &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
+	     any_saved_files == 1 && inlist(buttonlist, numbuttons, BTN_SLIDESHOW) != 0)
+    {
+      /* Slideshow */
+
+      done = 1;
+      slideshow = 1;
+      playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
+    }
+    else if (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
+	     event.button.x < (WINDOW_WIDTH - 96) &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
+	     inlist(buttonlist, numbuttons, BTN_BACK) != 0)
+    {
+      /* Back */
+
+      which = -1;
+      done = 1;
+      go_back = 1;
+      playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
+    }
+    else if (event.button.x >= (WINDOW_WIDTH - 96 - 48 - 48) &&
+	     event.button.x < (WINDOW_WIDTH - 48 - 96) &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
+	     d_places[which] != PLACE_STARTERS_DIR &&
+	     d_places[which] != PLACE_PERSONAL_STARTERS_DIR &&
+	     inlist(buttonlist, numbuttons, BTN_ERASE) != 0)
+    {
+      /* Erase */
+
+      want_erase = 1;
+    }
+    else if (event.button.x >= 96 && event.button.x < 96 + 48 &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
+	     inlist(buttonlist, numbuttons, BTN_PLAY) != 0)
+    {
+      /* Play */
+      playshow = 1;
+
+    }
+    else if (event.button.x >= 96 + 48 && event.button.x < 96 + 48 + 96 &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
+	     inlist(buttonlist, numbuttons, BTN_SPEEDCONTROL) != 0)
+    {
+      /* Speed slider */
+
+      int             old_speed, control_sound, click_x;
+
+      old_speed = speed;
+
+      click_x = event.button.x - 96 - 48;
+      speed = ((10 * click_x) / 96);
+
+      control_sound = -1;
+
+      if (speed < old_speed)
+		control_sound = SND_SHRINK;
+      else if (speed > old_speed)
+		control_sound = SND_GROW;
+
+      if (control_sound != -1)
+      {
+		playsound(screen, 0, control_sound, 0, SNDPOS_CENTER,
+		  SNDDIST_NEAR);
+
+		update_list = 1;
+      }
+    }
+  }
+  else if (event.type == SDL_MOUSEBUTTONDOWN &&
+	   event.button.button >= 4 && event.button.button <= 5 && wheely)
+  {
+    /* Scroll wheel! */
+
+    if (event.button.button == 4 && cur > 0)
+    {
+      cur = cur - 4;
+      update_list = 1;
+      playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
+
+      if (cur == 0)
+		do_setcursor(cursor_arrow);
+
+      if (which >= cur + 16)
+		which = which - 4;
+    }
+    else if (event.button.button == 5 && cur < num_files - 16)
+    {
+      cur = cur + 4;
+      update_list = 1;
+      playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
+
+      if (cur >= num_files - 16)
+		do_setcursor(cursor_arrow);
+
+      if (which < cur)
+		which = which + 4;
+    }
+  }
+  else if (event.type == SDL_MOUSEMOTION)
+  {
+    /* Deal with mouse pointer shape! */
+
+    if (event.button.y < 24 &&
+	event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
+	event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
+	cur > 0)
+    {
+      /* Scroll up button: */
+
+      do_setcursor(cursor_up);
+    }
+    else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24) &&
+	     event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
+	     event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
+	     cur < num_files - 16)
+    {
+      /* Scroll down button: */
+
+      do_setcursor(cursor_down);
+    }
+    else if (((event.button.x >= 96 && event.button.x < 96 + commandleftborder) ||
+	      (event.button.x >= (WINDOW_WIDTH - 96 - commandrightborder) &&
+	       event.button.x < (WINDOW_WIDTH - 96))) &&
+	     event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
+    {
+      /* One of the command buttons: */
+
+      do_setcursor(cursor_hand);
+    }
+    else if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
+	     event.button.y > 24 &&
+	     event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
+	     ((((event.button.x - 96) / (THUMB_W) +
+		(((event.button.y - 24) / THUMB_H) * 4)) +
+	       cur) < num_files))
+    {
+      /* One of the thumbnails: */
+
+      do_setcursor(cursor_hand);
+    }
+    else
+    {
+      /* Unclickable... */
+
+      do_setcursor(cursor_arrow);
+    }
+  }
+  *pwhich = which;
+  *pcur = cur;
+  *pupdate_list = update_list;
+  *pdone = done;
+  *pgo_back = go_back;
+  *pslideshow = slideshow;
+  *pwant_erase = want_erase;
+  *pspeed = speed;
+  *pplayshow = playshow;
+}
+
+enum
+{
+  DIALOG_NEW,
+  DIALOG_OPEN,
+  DIALOG_SLIDESHOW
+};
+
+int 
+do_dialog(int dialogtype)
+{
+  SDL_Surface   **thumbs = NULL;
+  struct dirent2 *fs;
+  char           *dirname[NUM_PLACES_TO_LOOK];
+  char          **d_names = NULL, **d_exts = NULL;
+  int            *d_places;
+  int            *selected;
+  int             num_selected;
+  FILE           *fi;
+  char            fname[1024];
+  int             num_files, done, slideshow, update_list, want_erase,
+                  cur, which, num_files_in_dirs, any_saved_files, speed,
+                  found;
+  SDL_Event       event;
+  SDLKey          key;
+  int             opened_something;
+  int             go_back = 0;
+  int             playshow = 0;
+
+  SDL_Surface    *img;
+  char           *rfname;
+  int             i, j;
+  int             tot;
+
+  int            *buttonlist;
+  int             numbuttons;
+
+  if (dialogtype == DIALOG_NEW)
+  {
+    buttonlist = new_dialog_buttons;
+    numbuttons = new_dialog_numbuttons;
+  }
+  else if (dialogtype == DIALOG_OPEN)
+  {
+    buttonlist = open_dialog_buttons;
+    numbuttons = open_dialog_numbuttons;
+  }
+  else if (dialogtype == DIALOG_SLIDESHOW)
+  {
+    buttonlist = slideshow_dialog_buttons;
+    numbuttons = slideshow_dialog_numbuttons;
+  }
+  else
+  {
+    debug("invalid dialog type!");
+    return 0;
+  }
+
 
   opened_something = 0;
 
@@ -12722,330 +13792,144 @@ int do_open(void)
   {
     do_setcursor(cursor_watch);
 
-    /* Allocate some space: */
-
-    things_alloced = 32;
-
-    fs = (struct dirent2 *) malloc(sizeof(struct dirent2) * things_alloced);
-
     num_files = 0;
     cur = 0;
     which = 0;
     slideshow = 0;
     num_files_in_dirs = 0;
-    any_saved_files = 0;
+    tot = 0;
+    any_saved_files = anysavedfiles();
 
 
-    /* Open directories of images: */
+    int             dirmask = SAVED_DIR_MASK;
 
-    for (places_to_look = 0;
-        places_to_look < NUM_PLACES_TO_LOOK; places_to_look++)
+    if (dialogtype == DIALOG_NEW)
     {
-      if (places_to_look == PLACE_SAVED_DIR)
-      {
-        /* First, check for saved-images: */
-
-        dirname[places_to_look] = get_fname("saved", DIR_SAVE);
-      }
-      else if (places_to_look == PLACE_PERSONAL_STARTERS_DIR)
-      {
-        dirname[places_to_look] = NULL;
-	continue;
-      }
-      else if (places_to_look == PLACE_STARTERS_DIR)
-      {
-        /* Finally, check for system-wide coloring-book style
-           'starter' images: */
-
-        dirname[places_to_look] = NULL;
-	continue;
-      }
-
-
-      /* Read directory of images and build thumbnails: */
-
-      d = opendir(dirname[places_to_look]);
-
-      if (d != NULL)
-      {
-        /* Gather list of files (for sorting): */
-
-        do
-        {
-          f = readdir(d);
-
-          if (f != NULL)
-          {
-            memcpy(&(fs[num_files_in_dirs].f), f, sizeof(struct dirent));
-            fs[num_files_in_dirs].place = places_to_look;
-
-            num_files_in_dirs++;
-
-            if (places_to_look == PLACE_SAVED_DIR)
-              any_saved_files = 1;
-
-            if (num_files_in_dirs >= things_alloced)
-            {
-              things_alloced = things_alloced + 32;
-
-	      // FIXME: Valgrind says this is leaked -bjk 2007.07.19
-              fs = (struct dirent2 *) realloc(fs,
-                  sizeof(struct dirent2) *
-                  things_alloced);
-            }
-          }
-        }
-        while (f != NULL);
-
-        closedir(d);
-      }
+      dirmask = PERSONAL_STARTERS_DIR_MASK | STARTERS_DIR_MASK;
     }
 
+    num_files_in_dirs = readimagedirs(dirmask, dirname, &fs);
+
+    int             tot = num_files_in_dirs;
+
+    if (dialogtype == DIALOG_NEW)
+    {
+      tot += NUM_COLORS;
+    }
 
     /* (Re)allocate space for the information about these files: */
 
-    thumbs = (SDL_Surface * *)malloc(sizeof(SDL_Surface *) * num_files_in_dirs);
-    d_places = (int *) malloc(sizeof(int) * num_files_in_dirs);
-    d_names = (char **) malloc(sizeof(char *) * num_files_in_dirs);
-    d_exts = (char **) malloc(sizeof(char *) * num_files_in_dirs);
+    thumbs = (SDL_Surface * *) malloc(sizeof(SDL_Surface *) * tot);
+    d_places = (int *) malloc(sizeof(int) * tot);
+    d_names = (char **) malloc(sizeof(char *) * tot);
+    d_exts = (char **) malloc(sizeof(char *) * tot);
+    if (dialogtype == DIALOG_SLIDESHOW)
+    {
+      selected = (int *) malloc(sizeof(int) * tot);
+    }
 
 
     /* Sort: */
 
     qsort(fs, num_files_in_dirs, sizeof(struct dirent2),
-        (int (*)(const void *, const void *)) compare_dirent2s);
+	  (int (*) (const void *, const void *)) compare_dirent2s);
 
 
-    /* Read directory of images and build thumbnails: */
+    int             first_starter = 0;
 
-    for (j = 0; j < num_files_in_dirs; j++)
+    if (dialogtype == DIALOG_NEW)
     {
-      f = &(fs[j].f);
-      place = fs[j].place;
 
-      show_progress_bar(screen);
+      /* Throw the color palette at the beginning: */
 
-      if (f != NULL)
+      for (j = 0; j < NUM_COLORS; j++)
       {
-        debug(f->d_name);
+		if (j < NUM_COLORS - 1)
+		{
+		  /* Palette colors: */
 
-        if (strcasestr(f->d_name, "-t.") == NULL &&
-            strcasestr(f->d_name, "-back.") == NULL)
-        {
-          if (strcasestr(f->d_name, FNAME_EXTENSION) != NULL
-              /* Support legacy BMP files for load: */
-              || strcasestr(f->d_name, ".bmp") != NULL
-             )
-          {
-            strcpy(fname, f->d_name);
-            if (strcasestr(fname, FNAME_EXTENSION) != NULL)
-            {
-              strcpy((char *) strcasestr(fname, FNAME_EXTENSION), "");
-              d_exts[num_files] = strdup(FNAME_EXTENSION);
-            }
+		  thumbs[num_files] = SDL_CreateRGBSurface(screen->flags,
+							 THUMB_W - 20, THUMB_H - 20,
+							   screen->format->BitsPerPixel,
+							   screen->format->Rmask,
+							   screen->format->Gmask,
+							   screen->format->Bmask, 0);
 
-            if (strcasestr(fname, ".bmp") != NULL)
-            {
-              strcpy((char *) strcasestr(fname, ".bmp"), "");
-              d_exts[num_files] = strdup(".bmp");
-            }
+		  if (thumbs[num_files] != NULL)
+		  {
+			SDL_FillRect(thumbs[num_files], NULL,
+				 SDL_MapRGB(thumbs[num_files]->format,
+						color_hexes[j][0],
+						color_hexes[j][1],
+						color_hexes[j][2]));
+		  }
+		}
+		else
+		{
+		  /* Color picker: */
+		  thumbs[num_files] = thumbnail(img_color_picker, THUMB_W - 20, THUMB_H - 20, 0);
+		}
 
-            d_names[num_files] = strdup(fname);
-            d_places[num_files] = place;
+		d_places[num_files] = PLACE_COLOR_PALETTE;
+		d_names[num_files] = NULL;
+		d_exts[num_files] = NULL;
 
-
-            /* Is it the 'current' file we just loaded?
-               We'll make it the current selection! */
-
-            if (strcmp(d_names[num_files], file_id) == 0)
-            {
-              which = num_files;
-              cur = (which / 4) * 4;
-
-              /* Center the cursor (useful for when the last item is
-                 selected first!) */
-
-              if (cur - 8 >= 0)
-                cur = cur - 8;
-              else if (cur - 4 >= 0)
-                cur = cur - 4;
-            }
-
-
-            /* Try to load thumbnail first: */
-
-            snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
-                dirname[d_places[num_files]], d_names[num_files]);
-            debug(fname);
-            img = IMG_Load(fname);
-
-            if (img == NULL)
-            {
-              /* No thumbnail in the new location ("saved/.thumbs"),
-                 try the old locatin ("saved/"): */
-
-              snprintf(fname, sizeof(fname), "%s/%s-t.png",
-                  dirname[d_places[num_files]], d_names[num_files]);
-              debug(fname);
-
-              img = IMG_Load(fname);
-            }
-
-            if (img != NULL)
-            {
-              /* Loaded the thumbnail from one or the other location */
-              show_progress_bar(screen);
-
-              img1 = SDL_DisplayFormat(img);
-              SDL_FreeSurface(img);
-
-              // if too big, or too small in both dimensions, rescale it
-              // ( for now: using old thumbnail as source for high speed, low quality)
-              if (img1->w > THUMB_W - 20 || img1->h > THUMB_H - 20
-                  || (img1->w < THUMB_W - 20 && img1->h < THUMB_H - 20))
-              {
-                img2 = thumbnail(img1, THUMB_W - 20, THUMB_H - 20, 0);
-                SDL_FreeSurface(img1);
-                img1 = img2;
-              }
-
-              thumbs[num_files] = img1;
-
-              if (thumbs[num_files] == NULL)
-              {
-                fprintf(stderr,
-                    "\nError: Couldn't create a thumbnail of "
-                    "saved image!\n" "%s\n", fname);
-              }
-
-              num_files++;
-            }
-            else
-            {
-              /* No thumbnail - load original: */
-
-              /* Make sure we have a ~/.tuxpaint/saved directory: */
-              if (make_directory("saved", "Can't create user data directory"))
-              {
-                /* (Make sure we have a .../saved/.thumbs/ directory:) */
-                make_directory("saved/.thumbs", "Can't create user data thumbnail directory");
-              }
-
-
-              if (img == NULL)
-              {
-                snprintf(fname, sizeof(fname), "%s/%s",
-                    dirname[d_places[num_files]], f->d_name);
-                debug(fname);
-                img = myIMG_Load(fname);
-              }
-
-
-              show_progress_bar(screen);
-
-              if (img == NULL)
-              {
-                fprintf(stderr,
-                    "\nWarning: I can't open one of the saved files!\n"
-                    "%s\n"
-                    "The Simple DirectMedia Layer error that "
-                    "occurred was:\n" "%s\n\n", fname, SDL_GetError());
-
-                free(d_names[num_files]);
-                free(d_exts[num_files]);
-              }
-              else
-              {
-                /* Turn it into a thumbnail: */
-
-                img1 = SDL_DisplayFormatAlpha(img);
-                img2 = thumbnail2(img1, THUMB_W - 20, THUMB_H - 20, 0, 0);
-                SDL_FreeSurface(img1);
-
-                show_progress_bar(screen);
-
-                thumbs[num_files] = SDL_DisplayFormat(img2);
-                SDL_FreeSurface(img2);
-                if (thumbs[num_files] == NULL)
-                {
-                  fprintf(stderr,
-                      "\nError: Couldn't create a thumbnail of "
-                      "saved image!\n" "%s\n", fname);
-                }
-
-                SDL_FreeSurface(img);
-
-                show_progress_bar(screen);
-
-
-                /* Let's save this thumbnail, so we don't have to
-                   create it again next time 'Open' is called: */
-
-                if (d_places[num_files] == PLACE_SAVED_DIR)
-                {
-                  debug("Saving thumbnail for this one!");
-
-                  snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
-                      dirname[d_places[num_files]], d_names[num_files]);
-
-                  fi = fopen(fname, "wb");
-                  if (fi == NULL)
-                  {
-                    fprintf(stderr,
-                        "\nError: Couldn't save thumbnail of "
-                        "saved image!\n"
-                        "%s\n"
-                        "The error that occurred was:\n"
-                        "%s\n\n", fname, strerror(errno));
-                  }
-                  else
-                  {
-                    do_png_save(fi, fname, thumbs[num_files]);
-                  }
-
-                  show_progress_bar(screen);
-                }
-
-
-                num_files++;
-              }
-            }
-          }
-        }
-        else
-        {
-          /* It was a thumbnail file ("...-t.png") */
-        }
+		num_files++;
       }
+
+      first_starter = num_files;
+
     }
 
+    int             setcur = 0;
 
+    if (dialogtype == DIALOG_OPEN || dialogtype == DIALOG_SLIDESHOW)
+    {
+      setcur = 1;
+    }
+    num_files = loadthumbs(fs, d_names, dirname, thumbs, first_starter,
+		 d_exts, d_places, num_files_in_dirs, setcur, &cur, &which);
 
 #ifdef DEBUG
     printf("%d saved files were found!\n", num_files);
 #endif
 
-
-
     if (num_files == 0)
     {
       do_prompt_snd(PROMPT_OPEN_NOFILES_TXT, PROMPT_OPEN_NOFILES_YES, "",
-          SND_YOUCANNOT,
-          (TOOL_OPEN % 2) * 48 + 24, (TOOL_OPEN / 2) * 48 + 40 + 24);
+		    SND_YOUCANNOT,
+		 (TOOL_OPEN % 2) * 48 + 24, (TOOL_OPEN / 2) * 48 + 40 + 24);
     }
     else
     {
       /* Let user choose an image: */
+      if (dialogtype == DIALOG_OPEN)
+      {
+	    //Instructions for 'Open' file dialog
+	    char           *freeme =
+		  textdir(gettext_noop("Choose the picture you want, "
+					   "then click “Open”."));
 
-      // Instructions for 'Open' file dialog
-      char *freeme =
-        textdir(gettext_noop("Choose the picture you want, "
-              "then click “Open”."));
-      draw_tux_text(TUX_BORED, freeme, 1);
-      free(freeme);
+		draw_tux_text(TUX_BORED, freeme, 1);
+		free(freeme);
+      }
+      else if (dialogtype == DIALOG_NEW)
+      {
+		draw_tux_text(TUX_BORED, tool_tips[TOOL_NEW], 1);
+      }
+      else if (dialogtype == DIALOG_SLIDESHOW)
+      {
+	    //Instructions for Slideshow file dialog
+	    char           *freeme = textdir(gettext_noop(SLIDESHOWTEXT));
 
-      /* NOTE: cur is now set above; if file_id'th file is found, it's
-         set to that file's index; otherwise, we default to '0' */
+		draw_tux_text(TUX_BORED, freeme, 1);
+		free(freeme);
+      }
+
+      /*
+       * NOTE: cur is now set above; if file_id'th file is found, it's set to
+       * that file's index; otherwise, we default to '0'
+       */
 
       update_list = 1;
       want_erase = 0;
@@ -13053,660 +13937,457 @@ int do_open(void)
       done = 0;
       slideshow = 0;
 
-      last_click_which = -1;
-      last_click_time = 0;
-      last_click_button = -1;
+      //FIXME:Make these global, so it sticks between views ?
+      num_selected = 0;
 
+      speed = 5;
 
       do_setcursor(cursor_arrow);
 
 
-      do
-      {
-        /* Update screen: */
+	  do
+	  {
+		/* Update screen: */
+
+		if (update_list)
+		{
+		  int             rendernumbers = 0;
+
+		  if (dialogtype == DIALOG_SLIDESHOW)
+		  {
+			rendernumbers = 1;
+		  }
+		  updatescreen2(buttonlist, numbuttons, cur,
+				which, d_places, num_files, thumbs, rendernumbers, num_selected, selected,
+				speed, any_saved_files);
+		  update_list = 0;
+		}
+
+
+		SDL_WaitEvent(&event);
+
+		if (event.type == SDL_QUIT)
+		{
+		  done = 1;
+
+		  /* FIXME: Handle SDL_Quit better */
+		}
+		else if (event.type == SDL_ACTIVEEVENT)
+		{
+		  handle_active(&event);
+		}
+		else if (event.type == SDL_KEYUP)
+		{
+		  key = event.key.keysym.sym;
+
+		  handle_keymouse(key, SDL_KEYUP);
+		}
+		else if (event.type == SDL_KEYDOWN)
+		{
+		  key = event.key.keysym.sym;
+
+		  handle_keymouse(key, SDL_KEYDOWN);
+		  if (dialogtype == DIALOG_SLIDESHOW && (key == SDLK_RETURN || key == SDLK_SPACE))
+		  {
+			/* Play */
+
+			playshow = 1;
+			playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
+		  }
+		  else if (dialogtype == DIALOG_SLIDESHOW && key == SDLK_ESCAPE)
+		  {
+			/* Go back: */
+
+			go_back = 1;
+			done = 1;
+			playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
+		  }
+		  else if (dialogtype == DIALOG_OPEN && key == SDLK_d &&
+			   (event.key.keysym.mod & KMOD_CTRL) &&
+			   d_places[which] != PLACE_STARTERS_DIR &&
+			 d_places[which] != PLACE_PERSONAL_STARTERS_DIR && !noshortcuts)
+		  {
+			/* Delete! */
+
+			want_erase = 1;
+		  }
+		  else if (handlenavigationkeys(key, num_files, &which, &cur, &done, &update_list) != 0)
+		  {
+		  }
+		}
+		else if (dialogtype == DIALOG_SLIDESHOW &&
+			 event.type == SDL_MOUSEBUTTONDOWN &&
+			 valid_click(event.button.button))
+		{
+		  if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
+			  event.button.y >= 24 &&
+			  event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 48))
+		  {
+			/* Picked an icon! */
+
+			which = ((event.button.x - 96) / (THUMB_W) +
+				 (((event.button.y - 24) / THUMB_H) * 4)) + cur;
+
+			if (which < num_files)
+			{
+			  playsound(screen, 1, SND_BLEEP, 1, event.button.x, SNDDIST_NEAR);
+
+			  /* Is it selected already? */
+
+			  found = -1;
+			  for (i = 0; i < num_selected && found == -1; i++)
+			  {
+				if (selected[i] == which)
+				  found = i;
+			  }
+
+			  if (found == -1)
+			  {
+				/* No!  Select it! */
+
+				selected[num_selected++] = which;
+			  }
+			  else
+			  {
+				/* Yes!  Unselect it! */
 
-        if (update_list)
-        {
-          /* Erase screen: */
+				for (i = found; i < num_selected - 1; i++)
+				  selected[i] = selected[i + 1];
 
-          dest.x = 96;
-          dest.y = 0;
-          dest.w = WINDOW_WIDTH - 96 - 96;
-          dest.h = 48 * 7 + 40 + HEIGHTOFFSET;
+				num_selected--;
+			  }
 
-          SDL_FillRect(screen, &dest, SDL_MapRGB(screen->format,
-                255, 255, 255));
+			  update_list = 1;
+			}
+		  }
 
 
-          /* Draw icons: */
+		  else
+		  {
+			dialog_handlemouse(event, buttonlist, numbuttons, &which, &cur, num_files, &update_list, &done, &go_back, any_saved_files, &slideshow, d_places, &want_erase, &speed, &playshow);
+		  }
+		}
+		else
+		{
+		  dialog_handlemouse(event, buttonlist, numbuttons, &which, &cur, num_files, &update_list, &done, &go_back, any_saved_files, &slideshow, d_places, &want_erase, &speed, &playshow);
+		}
 
-          for (i = cur; i < cur + 16 && i < num_files; i++)
-          {
-            /* Draw cursor: */
+		if (want_erase)
+		{
+		  want_erase = 0;
 
-            dest.x = THUMB_W * ((i - cur) % 4) + 96;
-            dest.y = THUMB_H * ((i - cur) / 4) + 24;
+		  if (do_prompt_image_snd(PROMPT_ERASE_TXT,
+					  PROMPT_ERASE_YES, PROMPT_ERASE_NO,
+					  thumbs[which],
+					  img_popup_arrow, img_trash, SND_AREYOUSURE,
+					  WINDOW_WIDTH - 96 - 48 - 48 + 24,
+					  48 * 7 + 40 + HEIGHTOFFSET - 48 + 24))
+		  {
+			snprintf(fname, sizeof(fname), "saved/%s%s",
+				 d_names[which], d_exts[which]);
 
-            if (i == which)
-            {
-              SDL_BlitSurface(img_cursor_down, NULL, screen, &dest);
-              debug(d_names[i]);
-            }
-            else
-              SDL_BlitSurface(img_cursor_up, NULL, screen, &dest);
+			rfname = get_fname(fname, DIR_SAVE);
+			debug(rfname);
 
+			if (unlink(rfname) == 0)
+			{
+			  update_list = 1;
 
 
-            dest.x = THUMB_W * ((i - cur) % 4) + 96 + 10 +
-              (THUMB_W - 20 - thumbs[i]->w) / 2;
-            dest.y = THUMB_H * ((i - cur) / 4) + 24 + 10 +
-              (THUMB_H - 20 - thumbs[i]->h) / 2;
+			  /* Delete the thumbnail, too: */
 
-            if (thumbs[i] != NULL)
-              SDL_BlitSurface(thumbs[i], NULL, screen, &dest);
-          }
+			  snprintf(fname, sizeof(fname),
+				   "saved/.thumbs/%s-t.png", d_names[which]);
 
+			  free(rfname);
+			  rfname = get_fname(fname, DIR_SAVE);
+			  debug(rfname);
 
-          /* Draw arrows: */
+			  unlink(rfname);
 
-          dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-          dest.y = 0;
 
-          if (cur > 0)
-            SDL_BlitSurface(img_scroll_up, NULL, screen, &dest);
-          else
-            SDL_BlitSurface(img_scroll_up_off, NULL, screen, &dest);
+			  /* Try deleting old-style thumbnail, too: */
 
-          dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
+			  unlink(rfname);
+			  snprintf(fname, sizeof(fname), "saved/%s-t.png", d_names[which]);
 
-          if (cur < num_files - 16)
-            SDL_BlitSurface(img_scroll_down, NULL, screen, &dest);
-          else
-            SDL_BlitSurface(img_scroll_down_off, NULL, screen, &dest);
+			  free(rfname);
+			  rfname = get_fname(fname, DIR_SAVE);
+			  debug(rfname);
 
+			  unlink(rfname);
 
-          /* "Open" button: */
 
-          dest.x = 96;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-          SDL_BlitSurface(img_open, NULL, screen, &dest);
+			  /* Delete .dat file, if any: */
 
-          dest.x = 96 + (48 - img_openlabels_open->w) / 2;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_open->h;
-          SDL_BlitSurface(img_openlabels_open, NULL, screen, &dest);
+			  unlink(rfname);
+			  snprintf(fname, sizeof(fname), "saved/%s.dat", d_names[which]);
 
+			  free(rfname);
+			  rfname = get_fname(fname, DIR_SAVE);
+			  debug(rfname);
 
-          /* "Slideshow" button: */
+			  unlink(rfname);
 
-          dest.x = 96 + 48;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-          if (any_saved_files)
-            SDL_BlitSurface(img_btn_up, NULL, screen, &dest);
-          else
-            SDL_BlitSurface(img_btn_off, NULL, screen, &dest);
 
-          dest.x = 96 + 48;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-          SDL_BlitSurface(img_slideshow, NULL, screen, &dest);
+			  /* Move all other files up a notch: */
 
-          dest.x = 96 + 48 + (48 - img_openlabels_slideshow->w) / 2;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_slideshow->h;
-          SDL_BlitSurface(img_openlabels_slideshow, NULL, screen, &dest);
+			  free(d_names[which]);
+			  free(d_exts[which]);
+			  free_surface(&thumbs[which]);
 
+			  thumbs[which] = NULL;
 
-          /* "Back" button: */
+			  for (i = which; i < num_files - 1; i++)
+			  {
+				d_names[i] = d_names[i + 1];
+				d_exts[i] = d_exts[i + 1];
+				thumbs[i] = thumbs[i + 1];
+				d_places[i] = d_places[i + 1];
+			  }
 
-          dest.x = WINDOW_WIDTH - 96 - 48;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-          SDL_BlitSurface(img_back, NULL, screen, &dest);
+			  num_files--;
 
-          dest.x = WINDOW_WIDTH - 96 - 48 + (48 - img_openlabels_back->w) / 2;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_back->h;
-          SDL_BlitSurface(img_openlabels_back, NULL, screen, &dest);
-
-
-          /* "Erase" button: */
-
-          dest.x = WINDOW_WIDTH - 96 - 48 - 48;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-
-          if (d_places[which] != PLACE_STARTERS_DIR &&
-              d_places[which] != PLACE_PERSONAL_STARTERS_DIR)
-            SDL_BlitSurface(img_erase, NULL, screen, &dest);
-          else
-            SDL_BlitSurface(img_btn_off, NULL, screen, &dest);
-
-          dest.x =
-            WINDOW_WIDTH - 96 - 48 - 48 + (48 - img_openlabels_erase->w) / 2;
-          dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_erase->h;
-          SDL_BlitSurface(img_openlabels_erase, NULL, screen, &dest);
-
-
-          SDL_Flip(screen);
-
-          update_list = 0;
-        }
-
-
-        SDL_WaitEvent(&event);
-
-        if (event.type == SDL_QUIT)
-        {
-          done = 1;
-
-          /* FIXME: Handle SDL_Quit better */
-        }
-        else if (event.type == SDL_ACTIVEEVENT)
-        {
-          handle_active(&event);
-        }
-        else if (event.type == SDL_KEYUP)
-        {
-          key = event.key.keysym.sym;
-
-          handle_keymouse(key, SDL_KEYUP);
-        }
-        else if (event.type == SDL_KEYDOWN)
-        {
-          key = event.key.keysym.sym;
-
-          handle_keymouse(key, SDL_KEYDOWN);
-
-          if (key == SDLK_LEFT)
-          {
-            if (which > 0)
-            {
-              which--;
-
-              if (which < cur)
-                cur = cur - 4;
-
-              update_list = 1;
-            }
-          }
-          else if (key == SDLK_RIGHT)
-          {
-            if (which < num_files - 1)
-            {
-              which++;
-
-              if (which >= cur + 16)
-                cur = cur + 4;
-
-              update_list = 1;
-            }
-          }
-          else if (key == SDLK_UP)
-          {
-            if (which >= 0)
-            {
-              which = which - 4;
-
-              if (which < 0)
-                which = 0;
-
-              if (which < cur)
-                cur = cur - 4;
-
-              update_list = 1;
-            }
-          }
-          else if (key == SDLK_DOWN)
-          {
-            if (which < num_files)
-            {
-              which = which + 4;
-
-              if (which >= num_files)
-                which = num_files - 1;
-
-              if (which >= cur + 16)
-                cur = cur + 4;
-
-              update_list = 1;
-            }
-          }
-          else if (key == SDLK_RETURN || key == SDLK_SPACE)
-          {
-            /* Open */
-
-            done = 1;
-            playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-          }
-          else if (key == SDLK_ESCAPE)
-          {
-            /* Go back: */
-
-            which = -1;
-            done = 1;
-            playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-          }
-          else if (key == SDLK_d &&
-              (event.key.keysym.mod & KMOD_CTRL) &&
-              d_places[which] != PLACE_STARTERS_DIR &&
-              d_places[which] != PLACE_PERSONAL_STARTERS_DIR && !noshortcuts)
-          {
-            /* Delete! */
-
-            want_erase = 1;
-          }
-        }
-        else if (event.type == SDL_MOUSEBUTTONDOWN &&
-            valid_click(event.button.button))
-        {
-          if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
-              event.button.y >= 24 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 48))
-          {
-            /* Picked an icon! */
-
-	    int old_which = which;
-
-            which = ((event.button.x - 96) / (THUMB_W) +
-                (((event.button.y - 24) / THUMB_H) * 4)) + cur;
-
-            if (which < num_files)
-            {
-              playsound(screen, 1, SND_BLEEP, 1, event.button.x, SNDDIST_NEAR);
-              update_list = 1;
-
-
-              if (which == last_click_which &&
-                  SDL_GetTicks() < last_click_time + 1000 &&
-                  event.button.button == last_click_button)
-              {
-                /* Double-click! */
-
-                done = 1;
-              }
-
-              last_click_which = which;
-              last_click_time = SDL_GetTicks();
-              last_click_button = event.button.button;
-            }
-	    else
-	      which = old_which;
-          }
-          else if (event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-              event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2)
-          {
-            if (event.button.y < 24)
-            {
-              /* Up scroll button: */
-
-              if (cur > 0)
-              {
-                cur = cur - 4;
-                update_list = 1;
-                playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
-                    SNDDIST_NEAR);
-
-                if (cur == 0)
-                  do_setcursor(cursor_arrow);
-              }
-
-              if (which >= cur + 16)
-                which = which - 4;
-            }
-            else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-                event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24))
-            {
-              /* Down scroll button: */
-
-              if (cur < num_files - 16)
-              {
-                cur = cur + 4;
-                update_list = 1;
-                playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
-                    SNDDIST_NEAR);
-
-                if (cur >= num_files - 16)
-                  do_setcursor(cursor_arrow);
-              }
-
-              if (which < cur)
-                which = which + 4;
-            }
-          }
-          else if (event.button.x >= 96 && event.button.x < 96 + 48 &&
-              event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-          {
-            /* Open */
-
-            done = 1;
-            playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-          }
-          else if (event.button.x >= 96 + 48 && event.button.x < 96 + 48 + 48 &&
-              event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
-              any_saved_files == 1)
-          {
-            /* Slideshow */
-
-            done = 1;
-            slideshow = 1;
-            playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-          }
-          else if (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-              event.button.x < (WINDOW_WIDTH - 96) &&
-              event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-          {
-            /* Back */
-
-            which = -1;
-            done = 1;
-            playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-          }
-          else if (event.button.x >= (WINDOW_WIDTH - 96 - 48 - 48) &&
-              event.button.x < (WINDOW_WIDTH - 48 - 96) &&
-              event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) &&
-              d_places[which] != PLACE_STARTERS_DIR &&
-              d_places[which] != PLACE_PERSONAL_STARTERS_DIR)
-          {
-            /* Erase */
-
-            want_erase = 1;
-          }
-        }
-        else if (event.type == SDL_MOUSEBUTTONDOWN &&
-            event.button.button >= 4 && event.button.button <= 5 && wheely)
-        {
-          /* Scroll wheel! */
-
-          if (event.button.button == 4 && cur > 0)
-          {
-            cur = cur - 4;
-            update_list = 1;
-            playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-            if (cur == 0)
-              do_setcursor(cursor_arrow);
-
-            if (which >= cur + 16)
-              which = which - 4;
-          }
-          else if (event.button.button == 5 && cur < num_files - 16)
-          {
-            cur = cur + 4;
-            update_list = 1;
-            playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-            if (cur >= num_files - 16)
-              do_setcursor(cursor_arrow);
-
-            if (which < cur)
-              which = which + 4;
-          }
-        }
-        else if (event.type == SDL_MOUSEMOTION)
-        {
-          /* Deal with mouse pointer shape! */
-
-          if (event.button.y < 24 &&
-              event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-              event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
-              cur > 0)
-          {
-            /* Scroll up button: */
-
-            do_setcursor(cursor_up);
-          }
-          else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24) &&
-              event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-              event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
-              cur < num_files - 16)
-          {
-            /* Scroll down button: */
-
-            do_setcursor(cursor_down);
-          }
-          else if (((event.button.x >= 96 && event.button.x < 96 + 48 + 48) ||
-                (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-                 event.button.x < (WINDOW_WIDTH - 96)) ||
-                (event.button.x >= (WINDOW_WIDTH - 96 - 48 - 48) &&
-                 event.button.x < (WINDOW_WIDTH - 48 - 96) &&
-                 d_places[which] != PLACE_STARTERS_DIR &&
-                 d_places[which] != PLACE_PERSONAL_STARTERS_DIR)) &&
-              event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-          {
-            /* One of the command buttons: */
-
-            do_setcursor(cursor_hand);
-          }
-          else if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
-              event.button.y > 24 &&
-              event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-              ((((event.button.x - 96) / (THUMB_W) +
-                 (((event.button.y - 24) / THUMB_H) * 4)) +
-                cur) < num_files))
-          {
-            /* One of the thumbnails: */
-
-            do_setcursor(cursor_hand);
-          }
-          else
-          {
-            /* Unclickable... */
-
-            do_setcursor(cursor_arrow);
-          }
-        }
-
-
-        if (want_erase)
-        {
-          want_erase = 0;
-
-          if (do_prompt_image_snd(PROMPT_ERASE_TXT,
-                PROMPT_ERASE_YES, PROMPT_ERASE_NO,
-                thumbs[which],
-                img_popup_arrow, img_trash, SND_AREYOUSURE,
-                WINDOW_WIDTH - 96 - 48 - 48 + 24,
-                48 * 7 + 40 + HEIGHTOFFSET - 48 + 24))
-          {
-            snprintf(fname, sizeof(fname), "saved/%s%s",
-                d_names[which], d_exts[which]);
-
-            rfname = get_fname(fname, DIR_SAVE);
-            debug(rfname);
-
-            if (unlink(rfname) == 0)
-            {
-              update_list = 1;
-
-
-              /* Delete the thumbnail, too: */
-
-              snprintf(fname, sizeof(fname),
-                  "saved/.thumbs/%s-t.png", d_names[which]);
-
-              free(rfname);
-              rfname = get_fname(fname, DIR_SAVE);
-              debug(rfname);
-
-              unlink(rfname);
-
-
-              /* Try deleting old-style thumbnail, too: */
-
-              unlink(rfname);
-              snprintf(fname, sizeof(fname), "saved/%s-t.png", d_names[which]);
-
-              free(rfname);
-              rfname = get_fname(fname, DIR_SAVE);
-              debug(rfname);
-
-              unlink(rfname);
-
-
-              /* Delete .dat file, if any: */
-
-              unlink(rfname);
-              snprintf(fname, sizeof(fname), "saved/%s.dat", d_names[which]);
-
-              free(rfname);
-              rfname = get_fname(fname, DIR_SAVE);
-              debug(rfname);
-
-              unlink(rfname);
-
-
-              /* Move all other files up a notch: */
-
-              free(d_names[which]);
-              free(d_exts[which]);
-              free_surface(&thumbs[which]);
-
-              thumbs[which] = NULL;
-
-              for (i = which; i < num_files - 1; i++)
-              {
-                d_names[i] = d_names[i + 1];
-                d_exts[i] = d_exts[i + 1];
-                thumbs[i] = thumbs[i + 1];
-                d_places[i] = d_places[i + 1];
-              }
-
-              num_files--;
-
-
-              /* Make sure the cursor doesn't go off the end! */
-
-              if (which >= num_files)
-                which = num_files - 1;
-
-
-              /* Scroll up if the cursor goes off top of screen! */
-
-              if (which < cur && cur >= 4)
-              {
-                cur = cur - 4;
-                update_list = 1;
-              }
-
-
-              /* No files to open now? */
-
-              if (which < 0)
-              {
-                do_prompt_snd(PROMPT_OPEN_NOFILES_TXT,
-                    PROMPT_OPEN_NOFILES_YES, "", SND_YOUCANNOT,
-		    screen->w / 2, screen->h / 2);
-                done = 1;
-              }
-            }
-            else
-            {
-              perror(rfname);
-
-              do_prompt_snd("CAN'T", "OK", "", SND_YOUCANNOT, 0, 0);
-              update_list = 1;
-            }
-
-            free(rfname);
-          }
-          else
-          {
-            update_list = 1;
-          }
-        }
-
-      }
-      while (!done);
-
-
-      if (!slideshow)
-      {
-        /* Load the chosen picture: */
-
-        if (which != -1)
-        {
-          /* Save old one first? */
-
-          if (!been_saved && !disable_save)
-          {
-            if (do_prompt_image_snd(PROMPT_OPEN_SAVE_TXT,
-                  PROMPT_OPEN_SAVE_YES,
-                  PROMPT_OPEN_SAVE_NO,
-                  img_tools[TOOL_SAVE], NULL, NULL,
-                  SND_AREYOUSURE, screen->w / 2, screen->h / 2))
-            {
-              do_save(TOOL_OPEN, 1);
-            }
-          }
-
-
-          /* Figure out filename: */
-
-          snprintf(fname, sizeof(fname), "%s/%s%s",
-              dirname[d_places[which]], d_names[which], d_exts[which]);
-
-          img = myIMG_Load(fname);
-
-          if (img == NULL)
-          {
-            fprintf(stderr,
-                "\nWarning: Couldn't load the saved image!\n"
-                "%s\n"
-                "The Simple DirectMedia Layer error that occurred "
-                "was:\n" "%s\n\n", fname, SDL_GetError());
-
-            do_prompt(PROMPT_OPEN_UNOPENABLE_TXT,
-                PROMPT_OPEN_UNOPENABLE_YES, "", 0, 0);
-          }
-          else
-          {
-            free_surface(&img_starter);
-            free_surface(&img_starter_bkgd);
-            starter_mirrored = 0;
-            starter_flipped = 0;
-            starter_personal = 0;
-
-            autoscale_copy_smear_free(img, canvas, SDL_BlitSurface);
-
-            cur_undo = 0;
-            oldest_undo = 0;
-            newest_undo = 0;
-
-            /* Saved image: */
-
-            been_saved = 1;
-
-            strcpy(file_id, d_names[which]);
-            starter_id[0] = '\0';
-
-
-            /* See if this saved image was based on a 'starter' */
-
-            load_starter_id(d_names[which]);
-
-            if (starter_id[0] != '\0')
-            {
-              load_starter(starter_id);
-
-              if (starter_mirrored)
-                mirror_starter();
-
-              if (starter_flipped)
-                flip_starter();
-            }
-
-            reset_avail_tools();
-
-            tool_avail_bak[TOOL_UNDO] = 0;
-            tool_avail_bak[TOOL_REDO] = 0;
-
-            opened_something = 1;
-          }
-        }
-      }
 
+			  /* Make sure the cursor doesn't go off the end! */
+
+			  if (which >= num_files)
+				which = num_files - 1;
+
+
+			  /* Scroll up if the cursor goes off top of screen! */
+
+			  if (which < cur && cur >= 4)
+			  {
+				cur = cur - 4;
+				update_list = 1;
+			  }
+
+
+			  /* No files to open now? */
+
+			  if (which < 0)
+			  {
+				do_prompt_snd(PROMPT_OPEN_NOFILES_TXT,
+						  PROMPT_OPEN_NOFILES_YES, "", SND_YOUCANNOT,
+						  screen->w / 2, screen->h / 2);
+				done = 1;
+			  }
+			}
+			else
+			{
+			  perror(rfname);
+
+			  do_prompt_snd("CAN'T", "OK", "", SND_YOUCANNOT, 0, 0);
+			  update_list = 1;
+			}
+
+			free(rfname);
+		  }
+		  else
+		  {
+			update_list = 1;
+		  }
+		}
+		if (playshow != 0)
+		{
+		  playshow = 0;
+		  playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
+
+
+		  /* If none selected, select all, in order! */
+
+		  if (num_selected == 0)
+		  {
+			for (i = 0; i < num_files; i++)
+			  selected[i] = i;
+			num_selected = num_files;
+		  }
+
+		  play_slideshow(selected, num_selected, dirname[0], d_names, d_exts, speed);
+
+
+		  /* Redraw entire screen, after playback: */
+
+		  SDL_FillRect(screen, NULL, SDL_MapRGB(canvas->format, 255, 255, 255));
+		  draw_toolbar();
+		  draw_colors(COLORSEL_CLOBBER_WIPE);
+		  draw_none();
+
+		  //Instructions for Slideshow file dialog
+		  char *freeme = textdir(gettext_noop(SLIDESHOWTEXT));
+
+		  draw_tux_text(TUX_BORED, freeme, 1);
+		  free(freeme);
+
+		  SDL_Flip(screen);
+
+		  update_list = 1;
+		}
+
+	  }
+	  while (!done);
+
+
+      if (!slideshow && dialogtype != DIALOG_SLIDESHOW)
+	  {
+		/* Load the chosen picture: */
+
+		if (which != -1)
+		{
+		  /* Save old one first? */
+
+		  if (!been_saved && !disable_save)
+		  {
+			if (do_prompt_image_snd(PROMPT_OPEN_SAVE_TXT,
+						PROMPT_OPEN_SAVE_YES,
+						PROMPT_OPEN_SAVE_NO,
+						img_tools[TOOL_SAVE], NULL, NULL,
+					  SND_AREYOUSURE, screen->w / 2, screen->h / 2))
+			{
+			  do_save(TOOL_OPEN, 1);
+			}
+		  }
+
+		  if (which >= first_starter)
+		  {
+			/* Figure out filename: */
+
+			snprintf(fname, sizeof(fname), "%s/%s%s",
+			   dirname[d_places[which]], d_names[which], d_exts[which]);
+
+			img = myIMG_Load(fname);
+
+			if (img == NULL)
+			{
+			  fprintf(stderr,
+				  "\nWarning: Couldn't load the saved image!\n"
+				  "%s\n"
+				  "The Simple DirectMedia Layer error that occurred "
+				  "was:\n" "%s\n\n", fname, SDL_GetError());
+
+			  do_prompt(PROMPT_OPEN_UNOPENABLE_TXT,
+				PROMPT_OPEN_UNOPENABLE_YES, "", 0, 0);
+			}
+			else
+			{
+			  free_surface(&img_starter);
+			  free_surface(&img_starter_bkgd);
+			  starter_mirrored = 0;
+			  starter_flipped = 0;
+			  starter_personal = 0;
+
+			  autoscale_copy_smear_free(img, canvas, SDL_BlitSurface);
+
+			  cur_undo = 0;
+			  oldest_undo = 0;
+			  newest_undo = 0;
+
+			  /* Saved image: */
+
+			  been_saved = 1;
+
+			  strcpy(file_id, d_names[which]);
+			  starter_id[0] = '\0';
+
+			  if (dialogtype == DIALOG_NEW)
+			  {
+				file_id[0] = '\0';
+				strcpy(starter_id, d_names[which]);
+				if (d_places[which] == PLACE_PERSONAL_STARTERS_DIR)
+				  starter_personal = 1;
+				else
+				  starter_personal = 0;
+
+				load_starter(starter_id);
+
+				canvas_color_r = 255;
+				canvas_color_g = 255;
+				canvas_color_b = 255;
+
+				SDL_FillRect(canvas, NULL,
+						 SDL_MapRGB(canvas->format, 255, 255, 255));
+				SDL_BlitSurface(img_starter_bkgd, NULL, canvas, NULL);
+				SDL_BlitSurface(img_starter, NULL, canvas, NULL);
+			  }
+			  else
+			  {
+
+				/* See if this saved image was based on a 'starter' */
+
+				load_starter_id(d_names[which]);
+
+				if (starter_id[0] != '\0')
+				{
+				  load_starter(starter_id);
+
+				  if (starter_mirrored)
+					mirror_starter();
+
+				  if (starter_flipped)
+					flip_starter();
+				}
+
+			  }
+
+			  reset_avail_tools();
+
+			  tool_avail_bak[TOOL_UNDO] = 0;
+			  tool_avail_bak[TOOL_REDO] = 0;
+
+			  opened_something = 1;
+			}
+		  }
+		  else
+		  {
+			/* A color! */
+
+			free_surface(&img_starter);
+			free_surface(&img_starter_bkgd);
+			starter_mirrored = 0;
+			starter_flipped = 0;
+			starter_personal = 0;
+
+
+			/* Launch color picker if they chose that: */
+
+			if (which == NUM_COLORS - 1)
+			{
+			  if (do_color_picker() == 0)
+				return (0);
+			}
+
+			/*
+			 * FIXME: Don't do anything and go back to Open dialog if they
+			 * hit BACK in color picker!
+			 */
+
+			canvas_color_r = color_hexes[which][0];
+			canvas_color_g = color_hexes[which][1];
+			canvas_color_b = color_hexes[which][2];
+
+			SDL_FillRect(canvas, NULL, SDL_MapRGB(canvas->format,
+							  canvas_color_r,
+							  canvas_color_g,
+							  canvas_color_b));
+
+			cur_undo = 0;
+			oldest_undo = 0;
+			newest_undo = 0;
+
+			been_saved = 1;
+			reset_avail_tools();
+
+			tool_avail_bak[TOOL_UNDO] = 0;
+			tool_avail_bak[TOOL_REDO] = 0;
+
+			file_id[0] = '\0';
+			starter_id[0] = '\0';
+
+			playsound(screen, 1, SND_HARP, 1, SNDPOS_CENTER, SNDDIST_NEAR);
+		  }
+		}
+	  }
 
       update_canvas(0, 0, WINDOW_WIDTH - 96 - 96, 48 * 7 + 40 + HEIGHTOFFSET);
     }
@@ -13720,780 +14401,49 @@ int do_open(void)
 
     for (i = 0; i < num_files; i++)
     {
-      free(d_names[i]);
-      free(d_exts[i]);
+      if (d_names[i] != NULL)
+		free(d_names[i]);
+      if (d_exts[i] != NULL)
+		free(d_exts[i]);
     }
 
     for (i = 0; i < NUM_PLACES_TO_LOOK; i++)
       if (dirname[i] != NULL)
-        free(dirname[i]);
+		free(dirname[i]);
 
     free(d_names);
     free(d_exts);
     free(d_places);
 
 
-    if (slideshow)
+    if (slideshow && dialogtype != DIALOG_SLIDESHOW)
     {
-      slideshow = do_slideshow();
+      slideshow = do_dialog(DIALOG_SLIDESHOW);
     }
   }
   while (slideshow);
 
-  return(opened_something);
+  int retval = 0;
+
+  if (dialogtype == DIALOG_OPEN)
+  {
+    retval = opened_something;
+  }
+  else if (dialogtype == DIALOG_NEW)
+  {
+    retval = (which != -1);
+  }
+  else
+  {
+    retval = go_back;
+  }
+  return (retval);
 }
 
-
-/* FIXME: This, do_open() and do_new_dialog() should be combined and modularized! */
-
-/* Slide Show Selection Screen: */
-
-int do_slideshow(void)
+int 
+do_open(void)
 {
-  SDL_Surface *img, *img1, *img2;
-  int things_alloced;
-  SDL_Surface **thumbs = NULL;
-  DIR *d;
-  struct dirent *f;
-  struct dirent2 *fs;
-  char *dirname;
-  char **d_names = NULL, **d_exts = NULL;
-  int *selected;
-  int num_selected;
-  FILE *fi;
-  char fname[1024];
-  int num_files, num_files_in_dir, i, done, update_list, cur, which, j,
-    go_back, found, speed;
-  SDL_Rect dest;
-  SDL_Event event;
-  SDLKey key;
-  char *freeme;
-  int speeds;
-  float x_per, y_per;
-  int xx, yy;
-  SDL_Surface *btn, *blnk;
-
-  do_setcursor(cursor_watch);
-
-  /* Allocate some space: */
-
-  things_alloced = 32;
-
-  fs = (struct dirent2 *) malloc(sizeof(struct dirent2) * things_alloced);
-
-  num_files_in_dir = 0;
-  num_files = 0;
-  cur = 0;
-  which = 0;
-
-
-  /* Load list of saved-images: */
-
-  dirname = get_fname("saved", DIR_SAVE);
-
-
-  /* Read directory of images and build thumbnails: */
-
-  d = opendir(dirname);
-
-  if (d != NULL)
-  {
-    /* Gather list of files (for sorting): */
-
-    do
-    {
-      f = readdir(d);
-
-      if (f != NULL)
-      {
-	memcpy(&(fs[num_files_in_dir].f), f, sizeof(struct dirent));
-	fs[num_files_in_dir].place = PLACE_SAVED_DIR;
-
-	num_files_in_dir++;
-
-	if (num_files_in_dir >= things_alloced)
-	{
-	  things_alloced = things_alloced + 32;
-	  fs = (struct dirent2 *) realloc(fs,
-					  sizeof(struct dirent2) *
-					  things_alloced);
-	}
-      }
-    }
-    while (f != NULL);
-
-    closedir(d);
-  }
-
-
-  /* (Re)allocate space for the information about these files: */
-
-  thumbs = (SDL_Surface * *)malloc(sizeof(SDL_Surface *) * num_files_in_dir);
-  d_names = (char **) malloc(sizeof(char *) * num_files_in_dir);
-  d_exts = (char **) malloc(sizeof(char *) * num_files_in_dir);
-  selected = (int *) malloc(sizeof(int) * num_files_in_dir);
-
-
-  /* Sort: */
-
-  qsort(fs, num_files_in_dir, sizeof(struct dirent2),
-	(int (*)(const void *, const void *)) compare_dirent2s);
-
-
-  /* Read directory of images and build thumbnails: */
-
-  for (j = 0; j < num_files_in_dir; j++)
-  {
-    f = &(fs[j].f);
-
-    show_progress_bar(screen);
-
-    if (f != NULL)
-    {
-      debug(f->d_name);
-
-      if (strcasestr(f->d_name, "-t.") == NULL &&
-	  strcasestr(f->d_name, "-back.") == NULL)
-      {
-	if (strcasestr(f->d_name, FNAME_EXTENSION) != NULL
-	    /* Support legacy BMP files for load: */
-	    || strcasestr(f->d_name, ".bmp") != NULL
-	  )
-	{
-	  strcpy(fname, f->d_name);
-	  if (strcasestr(fname, FNAME_EXTENSION) != NULL)
-	  {
-	    strcpy((char *) strcasestr(fname, FNAME_EXTENSION), "");
-	    d_exts[num_files] = strdup(FNAME_EXTENSION);
-	  }
-
-	  if (strcasestr(fname, ".bmp") != NULL)
-	  {
-	    strcpy((char *) strcasestr(fname, ".bmp"), "");
-	    d_exts[num_files] = strdup(".bmp");
-	  }
-
-	  d_names[num_files] = strdup(fname);
-
-
-	  /* FIXME: Try to center list on whatever was selected
-	     in do_open() when the slideshow button was clicked. */
-
-	  /* Try to load thumbnail first: */
-
-	  snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
-		   dirname, d_names[num_files]);
-	  debug("Loading thumbnail...");
-	  debug(fname);
-	  img = IMG_Load(fname);
-	  if (img == NULL)
-	  {
-	    /* No thumbnail in the new location ("saved/.thumbs"),
-	       try the old locatin ("saved/"): */
-
-	    snprintf(fname, sizeof(fname), "%s/%s-t.png",
-		     dirname, d_names[num_files]);
-	    debug(fname);
-
-	    img = IMG_Load(fname);
-	  }
-
-
-	  if (img != NULL)
-	  {
-	    /* Loaded the thumbnail from one or the other location */
-
-	    debug("Thumbnail loaded, scaling");
-	    show_progress_bar(screen);
-
-	    img1 = SDL_DisplayFormat(img);
-	    SDL_FreeSurface(img);
-
-	    if (img1 != NULL)
-	    {
-	      // if too big, or too small in both dimensions, rescale it
-	      // ( for now: using old thumbnail as source for high speed, low quality)
-	      if (img1->w > THUMB_W - 20 || img1->h > THUMB_H - 20
-		  || (img1->w < THUMB_W - 20 && img1->h < THUMB_H - 20))
-	      {
-		img2 = thumbnail(img1, THUMB_W - 20, THUMB_H - 20, 0);
-		SDL_FreeSurface(img1);
-		img1 = img2;
-	      }
-
-	      thumbs[num_files] = img1;
-
-	      if (thumbs[num_files] == NULL)
-	      {
-		fprintf(stderr,
-			"\nError: Couldn't create a thumbnail of saved image!\n"
-			"%s\n", fname);
-	      }
-	      else
-		num_files++;
-	    }
-	  }
-	  else
-	  {
-	    /* No thumbnail - load original: */
-
-            /* Make sure we have a ~/.tuxpaint/saved directory: */
-            if (make_directory("saved", "Can't create user data directory"))
-            {
-              /* (Make sure we have a .../saved/.thumbs/ directory:) */
-              make_directory("saved/.thumbs", "Can't create user data thumbnail directory");
-            }
-
-	    snprintf(fname, sizeof(fname), "%s/%s", dirname, f->d_name);
-
-	    debug("Loading original, to make thumbnail");
-	    debug(fname);
-	    img = myIMG_Load(fname);
-
-
-	    show_progress_bar(screen);
-
-
-	    if (img == NULL)
-	    {
-	      fprintf(stderr,
-		      "\nWarning: I can't open one of the saved files!\n"
-		      "%s\n"
-		      "The Simple DirectMedia Layer error that "
-		      "occurred was:\n" "%s\n\n", fname, SDL_GetError());
-	    }
-	    else
-	    {
-	      /* Turn it into a thumbnail: */
-
-	      img1 = SDL_DisplayFormatAlpha(img);
-	      img2 = thumbnail2(img1, THUMB_W - 20, THUMB_H - 20, 0, 0);
-	      SDL_FreeSurface(img1);
-
-	      show_progress_bar(screen);
-
-	      thumbs[num_files] = SDL_DisplayFormat(img2);
-	      SDL_FreeSurface(img2);
-
-	      SDL_FreeSurface(img);
-
-	      if (thumbs[num_files] == NULL)
-	      {
-		fprintf(stderr,
-			"\nError: Couldn't create a thumbnail of saved image!\n"
-			"%s\n", fname);
-	      }
-	      else
-	      {
-		show_progress_bar(screen);
-
-		/* Let's save this thumbnail, so we don't have to
-		   create it again next time 'Open' is called: */
-
-		debug("Saving thumbnail for this one!");
-
-		snprintf(fname, sizeof(fname),
-			 "%s/.thumbs/%s-t.png", dirname, d_names[num_files]);
-
-		fi = fopen(fname, "wb");
-		if (fi == NULL)
-		{
-		  fprintf(stderr,
-			  "\nError: Couldn't save thumbnail of saved image!\n"
-			  "%s\n"
-			  "The error that occurred was:\n"
-			  "%s\n\n", fname, strerror(errno));
-		}
-		else
-		{
-		  do_png_save(fi, fname, thumbs[num_files]);
-		}
-
-		show_progress_bar(screen);
-
-		num_files++;
-	      }
-	    }
-	  }
-	}
-      }
-    }
-  }
-
-#ifdef DEBUG
-  printf("%d saved files were found!\n", num_files);
-#endif
-  /* Let user choose images: */
-
-  // Instructions for Slideshow file dialog (FIXME: Make a #define)
-  freeme = textdir(gettext_noop("Choose the pictures you want, "
-				"then click “Play”."));
-  draw_tux_text(TUX_BORED, freeme, 1);
-  free(freeme);
-
-  /* NOTE: cur is now set above; if file_id'th file is found, it's
-     set to that file's index; otherwise, we default to '0' */
-
-  update_list = 1;
-
-  go_back = 0;
-  done = 0;
-
-  // FIXME: Make these global, so it sticks between views?
-  num_selected = 0;
-  speed = 5;
-
-  do_setcursor(cursor_arrow);
-
-
-  do
-  {
-    /* Update screen: */
-
-    if (update_list)
-    {
-      /* Erase screen: */
-
-      dest.x = 96;
-      dest.y = 0;
-      dest.w = WINDOW_WIDTH - 96 - 96;
-      dest.h = 48 * 7 + 40 + HEIGHTOFFSET;
-
-      SDL_FillRect(screen, &dest, SDL_MapRGB(screen->format, 255, 255, 255));
-
-
-      /* Draw icons: */
-
-      for (i = cur; i < cur + 16 && i < num_files; i++)
-      {
-	/* Draw cursor: */
-
-	dest.x = THUMB_W * ((i - cur) % 4) + 96;
-	dest.y = THUMB_H * ((i - cur) / 4) + 24;
-
-	if (i == which)
-	{
-	  SDL_BlitSurface(img_cursor_down, NULL, screen, &dest);
-	  debug(d_names[i]);
-	}
-	else
-	  SDL_BlitSurface(img_cursor_up, NULL, screen, &dest);
-
-	if (thumbs[i] != NULL)
-	{
-	  dest.x = THUMB_W * ((i - cur) % 4) + 96 + 10 +
-	    (THUMB_W - 20 - thumbs[i]->w) / 2;
-	  dest.y = THUMB_H * ((i - cur) / 4) + 24 + 10 +
-	    (THUMB_H - 20 - thumbs[i]->h) / 2;
-
-	  SDL_BlitSurface(thumbs[i], NULL, screen, &dest);
-	}
-
-	found = -1;
-
-	for (j = 0; j < num_selected && found == -1; j++)
-	{
-	  if (selected[j] == i)
-	    found = j;
-	}
-
-	if (found != -1)
-	{
-	  dest.x = (THUMB_W * ((i - cur) % 4) + 96 + 10 +
-		    (THUMB_W - 20 - thumbs[i]->w) / 2) + thumbs[i]->w;
-	  dest.y = (THUMB_H * ((i - cur) / 4) + 24 + 10 +
-		    (THUMB_H - 20 - thumbs[i]->h) / 2) + thumbs[i]->h;
-
-	  draw_selection_digits(dest.x, dest.y, found + 1);
-	}
-      }
-
-
-      /* Draw arrows: */
-
-      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-      dest.y = 0;
-
-      if (cur > 0)
-	SDL_BlitSurface(img_scroll_up, NULL, screen, &dest);
-      else
-	SDL_BlitSurface(img_scroll_up_off, NULL, screen, &dest);
-
-      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-
-      if (cur < num_files - 16)
-	SDL_BlitSurface(img_scroll_down, NULL, screen, &dest);
-      else
-	SDL_BlitSurface(img_scroll_down_off, NULL, screen, &dest);
-
-
-      /* "Play" button: */
-
-      dest.x = 96;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-      SDL_BlitSurface(img_play, NULL, screen, &dest);
-
-      dest.x = 96 + (48 - img_openlabels_play->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_play->h;
-      SDL_BlitSurface(img_openlabels_play, NULL, screen, &dest);
-
-
-      /* "Back" button: */
-
-      dest.x = WINDOW_WIDTH - 96 - 48;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-      SDL_BlitSurface(img_back, NULL, screen, &dest);
-
-      dest.x = WINDOW_WIDTH - 96 - 48 + (48 - img_openlabels_back->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_back->h;
-      SDL_BlitSurface(img_openlabels_back, NULL, screen, &dest);
-
-
-      /* Speed control: */
-
-      speeds = 10;
-      x_per = 96.0 / speeds;
-      y_per = 48.0 / speeds;
-
-      for (i = 0; i < speeds; i++)
-      {
-        xx = ceil(x_per);
-        yy = ceil(y_per * i);
-
-        if (i <= speed)
-	  btn = thumbnail(img_btn_down, xx, yy, 0);
-        else
-	  btn = thumbnail(img_btn_up, xx, yy, 0);
-
-        blnk = thumbnail(img_btn_off, xx, 48 - yy, 0);
-
-        /* FIXME: Check for NULL! */
-
-        dest.x = 96 + 48 + (i * x_per);
-        dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-        SDL_BlitSurface(blnk, NULL, screen, &dest);
-
-        dest.x = 96 + 48 + (i * x_per);
-        dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - (y_per * i);
-        SDL_BlitSurface(btn, NULL, screen, &dest);
-
-        SDL_FreeSurface(btn);
-        SDL_FreeSurface(blnk);
-      }
-
-      SDL_Flip(screen);
-
-      update_list = 0;
-    }
-
-
-    SDL_WaitEvent(&event);
-
-    if (event.type == SDL_QUIT)
-    {
-      done = 1;
-
-      /* FIXME: Handle SDL_Quit better */
-    }
-    else if (event.type == SDL_ACTIVEEVENT)
-    {
-      handle_active(&event);
-    }
-    else if (event.type == SDL_KEYUP)
-    {
-      key = event.key.keysym.sym;
-
-      handle_keymouse(key, SDL_KEYUP);
-    }
-    else if (event.type == SDL_KEYDOWN)
-    {
-      key = event.key.keysym.sym;
-
-      handle_keymouse(key, SDL_KEYDOWN);
-
-      if (key == SDLK_RETURN || key == SDLK_SPACE)
-      {
-	/* Play */
-
-	done = 1;
-	playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-      }
-      else if (key == SDLK_ESCAPE)
-      {
-	/* Go back: */
-
-	go_back = 1;
-	done = 1;
-	playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-      }
-    }
-    else if (event.type == SDL_MOUSEBUTTONDOWN &&
-	     valid_click(event.button.button))
-    {
-      if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
-	  event.button.y >= 24 &&
-	  event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 48))
-      {
-	/* Picked an icon! */
-
-	which = ((event.button.x - 96) / (THUMB_W) +
-		 (((event.button.y - 24) / THUMB_H) * 4)) + cur;
-
-	if (which < num_files)
-	{
-	  playsound(screen, 1, SND_BLEEP, 1, event.button.x, SNDDIST_NEAR);
-
-	  /* Is it selected already? */
-
-	  found = -1;
-	  for (i = 0; i < num_selected && found == -1; i++)
-	  {
-	    if (selected[i] == which)
-	      found = i;
-	  }
-
-	  if (found == -1)
-	  {
-	    /* No!  Select it! */
-
-	    selected[num_selected++] = which;
-	  }
-	  else
-	  {
-            /* Yes!  Unselect it! */
-
-	    for (i = found; i < num_selected - 1; i++)
-	      selected[i] = selected[i + 1];
-
-	    num_selected--;
-	  }
-
-	  update_list = 1;
-	}
-      }
-      else if (event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-	       event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2)
-      {
-	if (event.button.y < 24)
-	{
-	  /* Up scroll button: */
-
-	  if (cur > 0)
-	  {
-	    cur = cur - 4;
-	    update_list = 1;
-	    playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-	    if (cur == 0)
-	      do_setcursor(cursor_arrow);
-	  }
-
-	  if (which >= cur + 16)
-	    which = which - 4;
-	}
-	else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-		 event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24))
-	{
-	  /* Down scroll button: */
-
-	  if (cur < num_files - 16)
-	  {
-	    cur = cur + 4;
-	    update_list = 1;
-	    playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-	    if (cur >= num_files - 16)
-	      do_setcursor(cursor_arrow);
-	  }
-
-	  if (which < cur)
-	    which = which + 4;
-	}
-      }
-      else if (event.button.x >= 96 && event.button.x < 96 + 48 &&
-	       event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-	/* Play */
-
-	playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-
-
-	/* If none selected, select all, in order! */
-
-	if (num_selected == 0)
-	{
-	  for (i = 0; i < num_files; i++)
-	    selected[i] = i;
-	  num_selected = num_files;
-	}
-
-	play_slideshow(selected, num_selected, dirname, d_names, d_exts, speed);
-
-
-	/* Redraw entire screen, after playback: */
-
-        SDL_FillRect(screen, NULL, SDL_MapRGB(canvas->format, 255, 255, 255));
-	draw_toolbar();
-        draw_colors(COLORSEL_CLOBBER_WIPE);
-	draw_none();
-
-  	// Instructions for Slideshow file dialog (FIXME: Make a #define)
-	freeme = textdir(gettext_noop("Choose the pictures you want, "
-				      "then click “Play”."));
-	draw_tux_text(TUX_BORED, freeme, 1);
-	free(freeme);
-
-	SDL_Flip(screen);
-
-	update_list = 1;
-      }
-      else if (event.button.x >= 96 + 48 && event.button.x < 96 + 48 + 96 &&
-	       event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-	/* Speed slider */
-
-	int old_speed, control_sound, click_x;
-
-	old_speed = speed;
-
-	click_x = event.button.x - 96 - 48;
-        speed = ((10 * click_x) / 96);
-
-	control_sound = -1;
-
-        if (speed < old_speed)
-	  control_sound = SND_SHRINK;
-	else if (speed > old_speed)
-	  control_sound = SND_GROW;
-
-	if (control_sound != -1)
-	{
-	  playsound(screen, 0, control_sound, 0, SNDPOS_CENTER,
-		    SNDDIST_NEAR);
-
-	  update_list = 1;
-	}
-      }
-      else if (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-	       event.button.x < (WINDOW_WIDTH - 96) &&
-	       event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-	/* Back */
-
-	go_back = 1;
-	done = 1;
-	playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-      }
-    }
-    else if (event.type == SDL_MOUSEBUTTONDOWN &&
-	     event.button.button >= 4 && event.button.button <= 5 && wheely)
-    {
-      /* Scroll wheel! */
-
-      if (event.button.button == 4 && cur > 0)
-      {
-	cur = cur - 4;
-	update_list = 1;
-	playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-	if (cur == 0)
-	  do_setcursor(cursor_arrow);
-
-	if (which >= cur + 16)
-	  which = which - 4;
-      }
-      else if (event.button.button == 5 && cur < num_files - 16)
-      {
-	cur = cur + 4;
-	update_list = 1;
-	playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-	if (cur >= num_files - 16)
-	  do_setcursor(cursor_arrow);
-
-	if (which < cur)
-	  which = which + 4;
-      }
-    }
-    else if (event.type == SDL_MOUSEMOTION)
-    {
-      /* Deal with mouse pointer shape! */
-
-      if (event.button.y < 24 &&
-	  event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-	  event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 && cur > 0)
-      {
-	/* Scroll up button: */
-
-	do_setcursor(cursor_up);
-      }
-      else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24) &&
-	       event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-	       event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
-	       cur < num_files - 16)
-      {
-	/* Scroll down button: */
-
-	do_setcursor(cursor_down);
-      }
-      else if (((event.button.x >= 96 && event.button.x < 96 + 48 + 96) ||
-		(event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-		 event.button.x < (WINDOW_WIDTH - 96))) &&
-	       event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-	       event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-	/* One of the command buttons: */
-
-	do_setcursor(cursor_hand);
-      }
-      else if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96
-	       && event.button.y > 24
-	       && event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) - 48
-	       &&
-	       ((((event.button.x - 96) / (THUMB_W) +
-		  (((event.button.y - 24) / THUMB_H) * 4)) + cur) <
-		num_files))
-      {
-	/* One of the thumbnails: */
-
-	do_setcursor(cursor_hand);
-      }
-      else
-      {
-	/* Unclickable... */
-
-	do_setcursor(cursor_arrow);
-      }
-    }
-  }
-  while (!done);
-
-
-  /* Clean up: */
-
-  free_surface_array(thumbs, num_files);
-
-  free(thumbs);
-
-  for (i = 0; i < num_files; i++)
-  {
-    free(d_names[i]);
-    free(d_exts[i]);
-  }
-
-  free(dirname);
-
-  free(d_names);
-  free(d_exts);
-  free(selected);
-
-
-  return go_back;
+  return do_dialog(DIALOG_OPEN);
 }
 
 
@@ -14916,6 +14866,10 @@ static void stamp_xor(int x, int y)
     }
   }
   SDL_UnlockSurface(screen);
+  update_screen(x - (CUR_STAMP_W + 1) / 2 + r_canvas.x,
+		y - (CUR_STAMP_H + 1) / 2 + r_canvas.y,
+		x + (CUR_STAMP_W + 1) / 2 + r_canvas.x,
+		y + (CUR_STAMP_H + 1) / 2 + r_canvas.y);
 }
 
 #endif
@@ -15855,11 +15809,8 @@ static void parse_options(FILE * fi)
 #endif
       else if (strstr(str, "savedir=") == str)
       {
-        char *dir;      
-	dir = strdup(str + 8);
-	remove_slash(dir);
-        savedir = replace_tilde(dir);  
-        free(dir);
+	savedir = strdup(str + 8);
+	remove_slash(savedir);
 
 #ifdef DEBUG
 	printf("savedir set to: %s\n", savedir);
@@ -15867,11 +15818,8 @@ static void parse_options(FILE * fi)
       }
       else if (strstr(str, "datadir=") == str)
       {
-        char *dir;
-	dir = strdup(str + 8);
-	remove_slash(dir);
-        datadir = replace_tilde(dir);
-        free(dir);
+	datadir = strdup(str + 8);
+	remove_slash(datadir);
 
 #ifdef DEBUG
 	printf("datadir set to: %s\n", datadir);
@@ -16008,30 +15956,6 @@ static char *remove_slash(char *path)
     path[len - 1] = 0;
 
   return path;
-}
-
-/* replace '~' at the beginning of a path with home directory */
-
-static char *replace_tilde(const char* const path)
-{
-    char *newpath;
-    int newlen;
-
-    int len = strlen(path);
-    
-    if (!len)
-        return strdup("");
-    
-    if (path[0] == '~')
-    {
-        newlen = strlen(getenv("HOME")) + len;
-        newpath = malloc(sizeof(char)*newlen);
-        sprintf(newpath, "%s%s", getenv("HOME"), path+1);  
-    }
-    else
-        newpath = strdup(path);
-    
-    return newpath;
 }
 
 
@@ -16761,8 +16685,8 @@ void load_magic_plugins(void)
       magic_api_struct[plc]->sRGB_to_linear = magic_sRGB_to_linear;
       magic_api_struct[plc]->linear_to_sRGB = magic_linear_to_sRGB;
       magic_api_struct[plc]->in_circle = in_circle_rad;
-      magic_api_struct[plc]->getpixel = magic_getpixel;
-      magic_api_struct[plc]->putpixel = magic_putpixel;
+      magic_api_struct[plc]->getpixel = getpixels[canvas->format->BytesPerPixel];
+      magic_api_struct[plc]->putpixel = putpixels[canvas->format->BytesPerPixel];
       magic_api_struct[plc]->line = magic_line_func;
       magic_api_struct[plc]->playsound = magic_playsound;
       magic_api_struct[plc]->stopsound = magic_stopsound;
@@ -17267,963 +17191,9 @@ SDL_Surface * magic_scale(SDL_Surface * surf, int w, int h, int aspect)
   return(thumbnail2(surf, w, h, aspect, 1));
 }
 
-/* FIXME: This, do_open() and do_slideshow() should be combined and modularized! */
-
 int do_new_dialog(void)
 {
-  SDL_Surface *img, *img1, *img2;
-  int things_alloced;
-  SDL_Surface **thumbs = NULL;
-  DIR *d;
-  struct dirent *f;
-  struct dirent2 *fs;
-  int place;
-  char *dirname[NUM_PLACES_TO_LOOK];
-  char **d_names = NULL, **d_exts = NULL;
-  int *d_places;
-  FILE *fi;
-  char fname[1024];
-  int num_files, i, done, update_list, cur, which,
-    num_files_in_dirs, j;
-  SDL_Rect dest;
-  SDL_Event event;
-  SDLKey key;
-  Uint32 last_click_time;
-  int last_click_which, last_click_button;
-  int places_to_look;
-  int tot;
-  int first_starter;
-
-  
-  do_setcursor(cursor_watch);
-
-  /* Allocate some space: */
-
-  things_alloced = 32;
-
-  fs = (struct dirent2 *) malloc(sizeof(struct dirent2) * things_alloced);
-
-  num_files = 0;
-  cur = 0;
-  which = 0;
-  num_files_in_dirs = 0;
-
-
-  first_starter = 0;
-
-
-  /* Open directories of images: */
-
-  for (places_to_look = 0;
-      places_to_look < NUM_PLACES_TO_LOOK; places_to_look++)
-  {
-    if (places_to_look == PLACE_SAVED_DIR)
-    {
-      /* Skip saved images; only want starters! */
-      dirname[places_to_look] = NULL;
-      continue; /* ugh */
-    }
-    else if (places_to_look == PLACE_PERSONAL_STARTERS_DIR)
-    {
-      /* Check for coloring-book style 'starter' images in our folder: */
-
-      dirname[places_to_look] = get_fname("starters", DIR_DATA);
-    }
-    else if (places_to_look == PLACE_STARTERS_DIR)
-    {
-      /* Finally, check for system-wide coloring-book style
-         'starter' images: */
-
-      dirname[places_to_look] = strdup(DATA_PREFIX "starters");
-    }
-
-
-    /* Read directory of images and build thumbnails: */
-
-    d = opendir(dirname[places_to_look]);
-
-    if (d != NULL)
-    {
-      /* Gather list of files (for sorting): */
-
-      do
-      {
-        f = readdir(d);
-
-        if (f != NULL)
-        {
-          memcpy(&(fs[num_files_in_dirs].f), f, sizeof(struct dirent));
-          fs[num_files_in_dirs].place = places_to_look;
-
-          num_files_in_dirs++;
-
-          if (num_files_in_dirs >= things_alloced)
-          {
-            things_alloced = things_alloced + 32;
-
-            fs = (struct dirent2 *) realloc(fs,
-                sizeof(struct dirent2) *
-                things_alloced);
-          }
-        }
-      }
-      while (f != NULL);
-
-      closedir(d);
-    }
-  }
-
-
-  /* (Re)allocate space for the information about these files: */
-
-  tot = num_files_in_dirs + NUM_COLORS;
-
-  thumbs = (SDL_Surface * *)malloc(sizeof(SDL_Surface *) * tot);
-  d_places = (int *) malloc(sizeof(int) * tot);
-  d_names = (char **) malloc(sizeof(char *) * tot);
-  d_exts = (char **) malloc(sizeof(char *) * tot);
-
-
-  /* Sort: */
-
-  qsort(fs, num_files_in_dirs, sizeof(struct dirent2),
-      (int (*)(const void *, const void *)) compare_dirent2s);
-
-
-  /* Throw the color palette at the beginning: */
-
-  for (j = 0; j < NUM_COLORS; j++)
-  {
-    if (j < NUM_COLORS - 1)
-    {
-      /* Palette colors: */
-
-      thumbs[num_files] = SDL_CreateRGBSurface(screen->flags,
-                                             THUMB_W - 20, THUMB_H - 20,
-                                screen->format->BitsPerPixel,
-                                screen->format->Rmask,
-                                screen->format->Gmask,
-                                screen->format->Bmask, 0);
-
-      if (thumbs[num_files] != NULL)
-      {
-        SDL_FillRect(thumbs[num_files], NULL,
-                     SDL_MapRGB(thumbs[num_files]->format,
-                                color_hexes[j][0],
-                                color_hexes[j][1],
-                                color_hexes[j][2]));
-      }
-    }
-    else
-    {
-      /* Color picker: */
-
-      thumbs[num_files] = thumbnail(img_color_picker, THUMB_W - 20, THUMB_H - 20, 0);
-    }
-
-    d_places[num_files] = PLACE_COLOR_PALETTE;
-    d_names[num_files] = NULL;
-    d_exts[num_files] = NULL;
-
-    num_files++;
-  }
-
-  first_starter = num_files;
-
-
-  /* Read directory of images and build thumbnails: */
-
-  for (j = 0; j < num_files_in_dirs; j++)
-  {
-    f = &(fs[j].f);
-    place = fs[j].place;
-
-    show_progress_bar(screen);
-
-    if (f != NULL)
-    {
-      debug(f->d_name);
-
-      if (strcasestr(f->d_name, "-t.") == NULL &&
-          strcasestr(f->d_name, "-back.") == NULL)
-      {
-        if (strcasestr(f->d_name, FNAME_EXTENSION) != NULL
-            /* Support legacy BMP files for load: */
-            || strcasestr(f->d_name, ".bmp") != NULL
-           )
-        {
-          strcpy(fname, f->d_name);
-          if (strcasestr(fname, FNAME_EXTENSION) != NULL)
-          {
-            strcpy((char *) strcasestr(fname, FNAME_EXTENSION), "");
-            d_exts[num_files] = strdup(FNAME_EXTENSION);
-          }
-
-          if (strcasestr(fname, ".bmp") != NULL)
-          {
-            strcpy((char *) strcasestr(fname, ".bmp"), "");
-            d_exts[num_files] = strdup(".bmp");
-          }
-
-          d_names[num_files] = strdup(fname);
-          d_places[num_files] = place;
-
-
-          /* Try to load thumbnail first: */
-
-          snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
-              dirname[d_places[num_files]], d_names[num_files]);
-          debug(fname);
-          img = IMG_Load(fname);
-
-          if (img == NULL)
-          {
-            /* No thumbnail in the new location ("saved/.thumbs"),
-               try the old locatin ("saved/"): */
-
-            snprintf(fname, sizeof(fname), "%s/%s-t.png",
-                dirname[d_places[num_files]], d_names[num_files]);
-            debug(fname);
-
-            img = IMG_Load(fname);
-          }
-
-          if (img != NULL)
-          {
-            /* Loaded the thumbnail from one or the other location */
-            show_progress_bar(screen);
-
-            img1 = SDL_DisplayFormat(img);
-            SDL_FreeSurface(img);
-
-            // if too big, or too small in both dimensions, rescale it
-            // ( for now: using old thumbnail as source for high speed, low quality)
-            if (img1->w > THUMB_W - 20 || img1->h > THUMB_H - 20
-                || (img1->w < THUMB_W - 20 && img1->h < THUMB_H - 20))
-            {
-              img2 = thumbnail(img1, THUMB_W - 20, THUMB_H - 20, 0);
-              SDL_FreeSurface(img1);
-              img1 = img2;
-            }
-
-            thumbs[num_files] = img1;
-
-            if (thumbs[num_files] == NULL)
-            {
-              fprintf(stderr,
-                  "\nError: Couldn't create a thumbnail of "
-                  "saved image!\n" "%s\n", fname);
-            }
-
-            num_files++;
-          }
-          else
-          {
-            /* No thumbnail - load original: */
-
-            /* Make sure we have a ~/.tuxpaint/saved directory: */
-            if (make_directory("saved", "Can't create user data directory"))
-            {
-              /* (Make sure we have a .../saved/.thumbs/ directory:) */
-              make_directory("saved/.thumbs", "Can't create user data thumbnail directory");
-            }
-
-            img = NULL;
-
-            if (d_places[num_files] == PLACE_STARTERS_DIR ||
-                d_places[num_files] == PLACE_PERSONAL_STARTERS_DIR)
-            {
-              /* Try to load a starter's background image, first!
-                 If it exists, it should give a better idea of what the
-                 starter looks like, compared to the overlay image... */
-
-              /* FIXME: Add .jpg support -bjk 2007.03.22 */
-
-              /* (Try JPEG first) */
-              snprintf(fname, sizeof(fname), "%s/%s-back.jpeg",
-                  dirname[d_places[num_files]], d_names[num_files]);
-
-              img = IMG_Load(fname);
-
-
-              if (img == NULL)
-              {
-                /* (Try PNG next) */
-                snprintf(fname, sizeof(fname), "%s/%s-back.png",
-                    dirname[d_places[num_files]], d_names[num_files]);
-
-                img = IMG_Load(fname);
-              }
-
-#ifndef NOSVG
-              if (img == NULL)
-              {
-                /* (Try SVG next) */
-                snprintf(fname, sizeof(fname), "%s/%s-back.svg",
-                    dirname[d_places[num_files]], d_names[num_files]);
-
-                img = load_svg(fname);
-              }
-#endif
-            }
-
-
-            if (img == NULL)
-            {
-              /* Didn't load a starter background (or didn't try!),
-                 try loading the actual image... */
-
-              snprintf(fname, sizeof(fname), "%s/%s",
-                  dirname[d_places[num_files]], f->d_name);
-              debug(fname);
-              img = myIMG_Load(fname);
-            }
-
-
-            show_progress_bar(screen);
-
-            if (img == NULL)
-            {
-              fprintf(stderr,
-                  "\nWarning: I can't open one of the saved files!\n"
-                  "%s\n"
-                  "The Simple DirectMedia Layer error that "
-                  "occurred was:\n" "%s\n\n", fname, SDL_GetError());
-
-              free(d_names[num_files]);
-              free(d_exts[num_files]);
-            }
-            else
-            {
-              /* Turn it into a thumbnail: */
-
-              img1 = SDL_DisplayFormatAlpha(img);
-              img2 = thumbnail2(img1, THUMB_W - 20, THUMB_H - 20, 0, 0);
-              SDL_FreeSurface(img1);
-
-              show_progress_bar(screen);
-
-              thumbs[num_files] = SDL_DisplayFormat(img2);
-              SDL_FreeSurface(img2);
-              if (thumbs[num_files] == NULL)
-              {
-                fprintf(stderr,
-                    "\nError: Couldn't create a thumbnail of "
-                    "saved image!\n" "%s\n", fname);
-              }
-
-              SDL_FreeSurface(img);
-
-              show_progress_bar(screen);
-
-
-              /* Let's save this thumbnail, so we don't have to
-                 create it again next time 'Open' is called: */
-
-              if (d_places[num_files] == PLACE_SAVED_DIR)
-              {
-                debug("Saving thumbnail for this one!");
-
-                snprintf(fname, sizeof(fname), "%s/.thumbs/%s-t.png",
-                    dirname[d_places[num_files]], d_names[num_files]);
-
-                fi = fopen(fname, "wb");
-                if (fi == NULL)
-                {
-                  fprintf(stderr,
-                      "\nError: Couldn't save thumbnail of "
-                      "saved image!\n"
-                      "%s\n"
-                      "The error that occurred was:\n"
-                      "%s\n\n", fname, strerror(errno));
-                }
-                else
-                {
-                  do_png_save(fi, fname, thumbs[num_files]);
-                }
-
-                show_progress_bar(screen);
-              }
-
-
-              num_files++;
-            }
-          }
-        }
-      }
-      else
-      {
-        /* It was a thumbnail file ("...-t.png") or immutable scene starter's
-           overlay layer ("...-front.png") */
-      }
-    }
-  }
-
-
-
-#ifdef DEBUG
-  printf("%d files were found!\n", num_files);
-#endif
-
-
-  /* Let user choose a color or image: */
-
-  // Instructions for 'New' file/color dialog
-  draw_tux_text(TUX_BORED, tool_tips[TOOL_NEW], 1);
-
-  /* NOTE: cur is now set above; if file_id'th file is found, it's
-     set to that file's index; otherwise, we default to '0' */
-
-  update_list = 1;
-
-  done = 0;
-
-  last_click_which = -1;
-  last_click_time = 0;
-  last_click_button = -1;
-
-
-  do_setcursor(cursor_arrow);
-
-
-  do
-  {
-    /* Update screen: */
-
-    if (update_list)
-    {
-      /* Erase screen: */
-
-      dest.x = 96;
-      dest.y = 0;
-      dest.w = WINDOW_WIDTH - 96 - 96;
-      dest.h = 48 * 7 + 40 + HEIGHTOFFSET;
-
-      SDL_FillRect(screen, &dest, SDL_MapRGB(screen->format,
-            255, 255, 255));
-
-
-      /* Draw icons: */
-
-      for (i = cur; i < cur + 16 && i < num_files; i++)
-      {
-        /* Draw cursor: */
-
-        dest.x = THUMB_W * ((i - cur) % 4) + 96;
-        dest.y = THUMB_H * ((i - cur) / 4) + 24;
-
-        if (d_places[i] == PLACE_SAVED_DIR)
-        {
-          if (i == which)
-          {
-            SDL_BlitSurface(img_cursor_down, NULL, screen, &dest);
-            debug(d_names[i]);
-          }
-          else
-            SDL_BlitSurface(img_cursor_up, NULL, screen, &dest);
-        }
-        else
-        {
-          if (i == which)
-          {
-            SDL_BlitSurface(img_cursor_starter_down, NULL, screen, &dest);
-            debug(d_names[i]);
-          }
-          else
-            SDL_BlitSurface(img_cursor_starter_up, NULL, screen, &dest);
-        }
-
-
-
-        dest.x = THUMB_W * ((i - cur) % 4) + 96 + 10 +
-          (THUMB_W - 20 - thumbs[i]->w) / 2;
-        dest.y = THUMB_H * ((i - cur) / 4) + 24 + 10 +
-          (THUMB_H - 20 - thumbs[i]->h) / 2;
-
-        if (thumbs[i] != NULL)
-          SDL_BlitSurface(thumbs[i], NULL, screen, &dest);
-      }
-
-
-      /* Draw arrows: */
-
-      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-      dest.y = 0;
-
-      if (cur > 0)
-        SDL_BlitSurface(img_scroll_up, NULL, screen, &dest);
-      else
-        SDL_BlitSurface(img_scroll_up_off, NULL, screen, &dest);
-
-      dest.x = (WINDOW_WIDTH - img_scroll_up->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-
-      if (cur < num_files - 16)
-        SDL_BlitSurface(img_scroll_down, NULL, screen, &dest);
-      else
-        SDL_BlitSurface(img_scroll_down_off, NULL, screen, &dest);
-
-
-      /* "Open" button: */
-
-      dest.x = 96;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-      SDL_BlitSurface(img_open, NULL, screen, &dest);
-
-      dest.x = 96 + (48 - img_openlabels_open->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_open->h;
-      SDL_BlitSurface(img_openlabels_open, NULL, screen, &dest);
-
-
-      /* "Back" button: */
-
-      dest.x = WINDOW_WIDTH - 96 - 48;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - 48;
-      SDL_BlitSurface(img_back, NULL, screen, &dest);
-
-      dest.x = WINDOW_WIDTH - 96 - 48 + (48 - img_openlabels_back->w) / 2;
-      dest.y = (48 * 7 + 40 + HEIGHTOFFSET) - img_openlabels_back->h;
-      SDL_BlitSurface(img_openlabels_back, NULL, screen, &dest);
-
-
-      SDL_Flip(screen);
-
-      update_list = 0;
-    }
-
-
-    SDL_WaitEvent(&event);
-
-    if (event.type == SDL_QUIT)
-    {
-      done = 1;
-
-      /* FIXME: Handle SDL_Quit better */
-    }
-    else if (event.type == SDL_ACTIVEEVENT)
-    {
-      handle_active(&event);
-    }
-    else if (event.type == SDL_KEYUP)
-    {
-      key = event.key.keysym.sym;
-
-      handle_keymouse(key, SDL_KEYUP);
-    }
-    else if (event.type == SDL_KEYDOWN)
-    {
-      key = event.key.keysym.sym;
-
-      handle_keymouse(key, SDL_KEYDOWN);
-
-      if (key == SDLK_LEFT)
-      {
-        if (which > 0)
-        {
-          which--;
-
-          if (which < cur)
-            cur = cur - 4;
-
-          update_list = 1;
-        }
-      }
-      else if (key == SDLK_RIGHT)
-      {
-        if (which < num_files - 1)
-        {
-          which++;
-
-          if (which >= cur + 16)
-            cur = cur + 4;
-
-          update_list = 1;
-        }
-      }
-      else if (key == SDLK_UP)
-      {
-        if (which >= 0)
-        {
-          which = which - 4;
-
-          if (which < 0)
-            which = 0;
-
-          if (which < cur)
-            cur = cur - 4;
-
-          update_list = 1;
-        }
-      }
-      else if (key == SDLK_DOWN)
-      {
-        if (which < num_files)
-        {
-          which = which + 4;
-
-          if (which >= num_files)
-            which = num_files - 1;
-
-          if (which >= cur + 16)
-            cur = cur + 4;
-
-          update_list = 1;
-        }
-      }
-      else if (key == SDLK_RETURN || key == SDLK_SPACE)
-      {
-        /* Open */
-
-        done = 1;
-        playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-      }
-      else if (key == SDLK_ESCAPE)
-      {
-        /* Go back: */
-
-        which = -1;
-        done = 1;
-        playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-      }
-    }
-    else if (event.type == SDL_MOUSEBUTTONDOWN &&
-        valid_click(event.button.button))
-    {
-      if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
-          event.button.y >= 24 &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 48))
-      {
-        /* Picked an icon! */
-
-        which = ((event.button.x - 96) / (THUMB_W) +
-            (((event.button.y - 24) / THUMB_H) * 4)) + cur;
-
-        if (which < num_files)
-        {
-          playsound(screen, 1, SND_BLEEP, 1, event.button.x, SNDDIST_NEAR);
-          update_list = 1;
-
-
-          if (which == last_click_which &&
-              SDL_GetTicks() < last_click_time + 1000 &&
-              event.button.button == last_click_button)
-          {
-            /* Double-click! */
-
-            done = 1;
-          }
-
-          last_click_which = which;
-          last_click_time = SDL_GetTicks();
-          last_click_button = event.button.button;
-        }
-      }
-      else if (event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-          event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2)
-      {
-        if (event.button.y < 24)
-        {
-          /* Up scroll button: */
-
-          if (cur > 0)
-          {
-            cur = cur - 4;
-            update_list = 1;
-            playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
-                SNDDIST_NEAR);
-
-            if (cur == 0)
-              do_setcursor(cursor_arrow);
-          }
-
-          if (which >= cur + 16)
-            which = which - 4;
-        }
-        else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-            event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24))
-        {
-          /* Down scroll button: */
-
-          if (cur < num_files - 16)
-          {
-            cur = cur + 4;
-            update_list = 1;
-            playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER,
-                SNDDIST_NEAR);
-
-            if (cur >= num_files - 16)
-              do_setcursor(cursor_arrow);
-          }
-
-          if (which < cur)
-            which = which + 4;
-        }
-      }
-      else if (event.button.x >= 96 && event.button.x < 96 + 48 &&
-          event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-        /* Open */
-
-        done = 1;
-        playsound(screen, 1, SND_CLICK, 1, SNDPOS_LEFT, SNDDIST_NEAR);
-      }
-      else if (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-          event.button.x < (WINDOW_WIDTH - 96) &&
-          event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-        /* Back */
-
-        which = -1;
-        done = 1;
-        playsound(screen, 1, SND_CLICK, 1, SNDPOS_RIGHT, SNDDIST_NEAR);
-      }
-    }
-    else if (event.type == SDL_MOUSEBUTTONDOWN &&
-        event.button.button >= 4 && event.button.button <= 5 && wheely)
-    {
-      /* Scroll wheel! */
-
-      if (event.button.button == 4 && cur > 0)
-      {
-        cur = cur - 4;
-        update_list = 1;
-        playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-        if (cur == 0)
-          do_setcursor(cursor_arrow);
-
-        if (which >= cur + 16)
-          which = which - 4;
-      }
-      else if (event.button.button == 5 && cur < num_files - 16)
-      {
-        cur = cur + 4;
-        update_list = 1;
-        playsound(screen, 1, SND_SCROLL, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-
-        if (cur >= num_files - 16)
-          do_setcursor(cursor_arrow);
-
-        if (which < cur)
-          which = which + 4;
-      }
-    }
-    else if (event.type == SDL_MOUSEMOTION)
-    {
-      /* Deal with mouse pointer shape! */
-
-      if (event.button.y < 24 &&
-          event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-          event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
-          cur > 0)
-      {
-        /* Scroll up button: */
-
-        do_setcursor(cursor_up);
-      }
-      else if (event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET - 48) &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET - 24) &&
-          event.button.x >= (WINDOW_WIDTH - img_scroll_up->w) / 2 &&
-          event.button.x <= (WINDOW_WIDTH + img_scroll_up->w) / 2 &&
-          cur < num_files - 16)
-      {
-        /* Scroll down button: */
-
-        do_setcursor(cursor_down);
-      }
-      else if (((event.button.x >= 96 && event.button.x < 96 + 48 + 48) ||
-            (event.button.x >= (WINDOW_WIDTH - 96 - 48) &&
-             event.button.x < (WINDOW_WIDTH - 96)) ||
-            (event.button.x >= (WINDOW_WIDTH - 96 - 48 - 48) &&
-             event.button.x < (WINDOW_WIDTH - 48 - 96) &&
-             d_places[which] != PLACE_STARTERS_DIR &&
-             d_places[which] != PLACE_PERSONAL_STARTERS_DIR)) &&
-          event.button.y >= (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET))
-      {
-        /* One of the command buttons: */
-
-        do_setcursor(cursor_hand);
-      }
-      else if (event.button.x >= 96 && event.button.x < WINDOW_WIDTH - 96 &&
-          event.button.y > 24 &&
-          event.button.y < (48 * 7 + 40 + HEIGHTOFFSET) - 48 &&
-          ((((event.button.x - 96) / (THUMB_W) +
-             (((event.button.y - 24) / THUMB_H) * 4)) +
-            cur) < num_files))
-      {
-        /* One of the thumbnails: */
-
-        do_setcursor(cursor_hand);
-      }
-      else
-      {
-        /* Unclickable... */
-
-        do_setcursor(cursor_arrow);
-      }
-    }
-  }
-  while (!done);
-
-
-  /* Load the chosen starter, or start with a blank solid color: */
-
-  if (which != -1)
-  {
-    /* Save old one first? */
-
-    if (!been_saved && !disable_save)
-    {
-      if (do_prompt_image_snd(PROMPT_OPEN_SAVE_TXT,
-            PROMPT_OPEN_SAVE_YES,
-            PROMPT_OPEN_SAVE_NO,
-            img_tools[TOOL_SAVE], NULL, NULL,
-            SND_AREYOUSURE,
-	    screen->w / 2, screen->h / 2))
-      {
-        do_save(TOOL_NEW, 1);
-      }
-    }
-
-
-    if (which >= first_starter)
-    {
-      /* Load a starter: */
-
-      /* Figure out filename: */
-
-      snprintf(fname, sizeof(fname), "%s/%s%s",
-            dirname[d_places[which]], d_names[which], d_exts[which]);
-
-      img = myIMG_Load(fname);
-
-      if (img == NULL)
-      {
-        fprintf(stderr,
-            "\nWarning: Couldn't load the saved image!\n"
-            "%s\n"
-            "The Simple DirectMedia Layer error that occurred "
-            "was:\n" "%s\n\n", fname, SDL_GetError());
-
-        do_prompt(PROMPT_OPEN_UNOPENABLE_TXT,
-            PROMPT_OPEN_UNOPENABLE_YES, "", 0 ,0);
-      }
-      else
-      {
-        free_surface(&img_starter);
-        free_surface(&img_starter_bkgd);
-        starter_mirrored = 0;
-        starter_flipped = 0;
-        starter_personal = 0;
-
-        autoscale_copy_smear_free(img, canvas, SDL_BlitSurface);
-
-        cur_undo = 0;
-        oldest_undo = 0;
-        newest_undo = 0;
-
-        /* Immutable 'starter' image;
-           we'll need to save a new image when saving...: */
-
-        been_saved = 1;
-
-        file_id[0] = '\0';
-        strcpy(starter_id, d_names[which]);
-
-        if (d_places[which] == PLACE_PERSONAL_STARTERS_DIR)
-          starter_personal = 1;
-        else
-          starter_personal = 0;
-
-        load_starter(starter_id);
-
-        canvas_color_r = 255;
-        canvas_color_g = 255;
-        canvas_color_b = 255;
-
-        SDL_FillRect(canvas, NULL,
-                     SDL_MapRGB(canvas->format, 255, 255, 255));
-        SDL_BlitSurface(img_starter_bkgd, NULL, canvas, NULL);
-        SDL_BlitSurface(img_starter, NULL, canvas, NULL);
-      }
-    }
-    else
-    {
-      /* A color! */
-
-      free_surface(&img_starter);
-      free_surface(&img_starter_bkgd);
-      starter_mirrored = 0;
-      starter_flipped = 0;
-      starter_personal = 0;
-
-
-      /* Launch color picker if they chose that: */
-
-      if (which == NUM_COLORS - 1)
-      {
-        if (do_color_picker() == 0)
-	  return(0);
-      }
-
-      /* FIXME: Don't do anything and go back to Open dialog if they
-         hit BACK in color picker! */
-
-      canvas_color_r = color_hexes[which][0];
-      canvas_color_g = color_hexes[which][1];
-      canvas_color_b = color_hexes[which][2];
- 
-      SDL_FillRect(canvas, NULL, SDL_MapRGB(canvas->format,
-    		                canvas_color_r,
-    				canvas_color_g,
-    				canvas_color_b));
-
-      cur_undo = 0;
-      oldest_undo = 0;
-      newest_undo = 0;
-
-      been_saved = 1;
-      reset_avail_tools();
-
-      tool_avail_bak[TOOL_UNDO] = 0;
-      tool_avail_bak[TOOL_REDO] = 0;
-
-      file_id[0] = '\0';
-      starter_id[0] = '\0';
-
-      playsound(screen, 1, SND_HARP, 1, SNDPOS_CENTER, SNDDIST_NEAR);
-    }
-  }
-
-  update_canvas(0, 0, WINDOW_WIDTH - 96 - 96, 48 * 7 + 40 + HEIGHTOFFSET);
-
-
-  /* Clean up: */
-
-  free_surface_array(thumbs, num_files);
-
-  free(thumbs);
-
-  for (i = 0; i < num_files; i++)
-  {
-    if (d_names[i] != NULL)
-      free(d_names[i]);
-    if (d_exts[i] != NULL)
-      free(d_exts[i]);
-  }
-
-  for (i = 0; i < NUM_PLACES_TO_LOOK; i++)
-    if (dirname[i] != NULL)
-      free(dirname[i]);
-
-  free(d_names);
-  free(d_exts);
-  free(d_places);
-
-  return(which != -1);
+  return do_dialog(DIALOG_NEW);
 }
 
 #if !defined(WIN32) && !defined(__APPLE__) && !defined(__BEOS__)
@@ -18717,15 +17687,4 @@ int do_color_picker(void)
 
   return(chose);
 }
-
-void magic_putpixel(SDL_Surface * surface, int x, int y, Uint32 pixel)
-{
-  putpixels[surface->format->BytesPerPixel](surface, x, y, pixel);
-}
-
-Uint32 magic_getpixel(SDL_Surface * surface, int x, int y)
-{
-  return(getpixels[surface->format->BytesPerPixel](surface, x, y));
-}
-
 

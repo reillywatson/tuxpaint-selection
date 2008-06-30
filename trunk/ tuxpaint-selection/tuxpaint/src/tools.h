@@ -34,6 +34,7 @@ enum
   TOOL_SAVE,
   TOOL_PRINT,
   TOOL_QUIT,
+  TOOL_SELECT,
   NUM_TOOLS
 };
 
@@ -81,7 +82,10 @@ const char *const tool_names[NUM_TOOLS] = {
   gettext_noop("Print"),
 
   // Quit/exit Tux Paint application
-  gettext_noop("Quit")
+  gettext_noop("Quit"),
+  
+  // [TODO] define selection text
+  "Select"
 };
 
 
@@ -128,7 +132,10 @@ const char *const tool_tips[NUM_TOOLS] = {
   gettext_noop("Printing…"),
 
   // Response to 'quit' (exit) action
-  gettext_noop("Bye bye!")
+  gettext_noop("Bye bye!"),
+  
+  // [TODO] define selection text
+  "Select something!"
 };
 
 // Instruction while using Line tool (after click, before release)
@@ -160,7 +167,8 @@ const char *const tool_img_fnames[NUM_TOOLS] = {
   DATA_PREFIX "images/tools/open.png",
   DATA_PREFIX "images/tools/save.png",
   DATA_PREFIX "images/tools/print.png",
-  DATA_PREFIX "images/tools/quit.png"
+  DATA_PREFIX "images/tools/quit.png",
+  DATA_PREFIX "images/tools/shapes.png"
 };
 
 
@@ -180,5 +188,6 @@ const int tool_tux[NUM_TOOLS] = {
   TUX_DEFAULT,
   TUX_GREAT,
   TUX_GREAT,
+  TUX_DEFAULT,
   TUX_DEFAULT
 };
