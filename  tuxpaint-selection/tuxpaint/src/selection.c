@@ -204,6 +204,10 @@ int lassoIsSelected(int x, int y)
 	// The standard "ray firing" winding point-in-polygon algorithm needs to be modified
 	// to flag each pixel along the ray as inside or outside, and then have this
 	// answer stored in some array
+	
+	// [FIXME] placeholder (not even a little bit correct):
+	if (x > minx && x < maxx && y > miny >> y < maxy) return 1;
+	return 0;
 }
 
 
@@ -355,28 +359,23 @@ static void drawOutlineXOR()
 }
 
 static Point* origPoints;
+static int oldminx = 10000;
+static int oldmaxx = -1;
+static int oldminy = 10000;
+static int oldmaxy = -1;
 
 static void copySelection()
 {
 	// [FIXME] I don't free old origPoints memory!
 	origPoints = malloc(numPoints * sizeof(Point));
 	int i;
+	oldminx = 10000;
+	oldmaxx = -1;
+	oldminy = 10000;
+	oldmaxy = -1;
 	for (i = 0; i < numPoints; i++)
 	{
 		origPoints[i] = points[i];
-	}
-}
-
-void pasteSelectionToScreen(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
-{
-	// update the canvas with the screen changes
-	int oldminx = 10000;
-	int oldmaxx = -1;
-	int oldminy = 10000;
-	int oldmaxy = -1;
-	int i;
-	for (i = 0; i < numPoints; i++)
-	{
 		int x = origPoints[i].x;
 		int y = origPoints[i].y;
 		if (x < oldminx) oldminx = x;
@@ -384,36 +383,16 @@ void pasteSelectionToScreen(SDL_Surface *canvas, SDL_Surface *screen, int x, int
 		if (y < oldminy) oldminy = y;
 		if (y > oldmaxy) oldmaxy = y;
 	}
-	SDL_Rect src = {max(oldminx, 0), oldminy, oldmaxx - oldminx + 1, oldmaxy - oldminy + 1};
-	SDL_Rect dst = {max(minx, 0), miny, maxx - minx + 1, maxy - miny + 1};
-	SDL_BlitSurface(canvas, &src, screen, &dst);
-	rec_undo_buffer();
-	update_canvas(0, 0, canvas->w, canvas->h);
-	SDL_UpdateRect(canvas, 0,0,0,0);//update_canvas(min(minx, oldminx) - 96, min(miny, oldminy), max(maxx, oldmaxx) - 96, max(maxy, oldmaxy));
-	SDL_UpdateRect(screen, 0,0,0,0);//update_screen(min(minx, oldminx), min(miny, oldminy), max(maxx, oldmaxx), max(maxy, oldmaxy));
 }
 
 // dstsurface can be either canvas or screen
-void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int y, int cut)
+void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int y, int canvastoscreen, int cut)
 {
-	// update the canvas with the screen changes
-	int oldminx = 10000;
-	int oldmaxx = -1;
-	int oldminy = 10000;
-	int oldmaxy = -1;
-	int i;
-	for (i = 0; i < numPoints; i++)
-	{
-		int x = origPoints[i].x;
-		int y = origPoints[i].y;
-		if (x < oldminx) oldminx = x;
-		if (x > oldmaxx) oldmaxx = x;
-		if (y < oldminy) oldminy = y;
-		if (y > oldmaxy) oldmaxy = y;
-	}
 	// [HACK] these 96s shouldn't be here
 	SDL_Rect src = {max(oldminx - 96, 0), oldminy, oldmaxx - oldminx + 1, oldmaxy - oldminy + 1};
-	SDL_Rect dst = {max(minx - 96, 0), miny, maxx - minx + 1, maxy - miny + 1};
+	int diff = 0;
+	if (canvastoscreen == 0) diff = 96;
+	SDL_Rect dst = {max(minx - diff, 0), miny, maxx - minx + 1, maxy - miny + 1};
 	SDL_BlitSurface(srcsurface, &src, dstsurface, &dst);
 	if (cut == 1)
 	{
@@ -421,7 +400,7 @@ void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int
 	}
 
 	rec_undo_buffer();
-	update_canvas(0,0,srcsurface->w,srcsurface->h);
+	if (cut == 1) update_canvas(0,0,srcsurface->w,srcsurface->h);
 	//update_canvas(min(minx, oldminx) - 96, min(miny, oldminy), max(maxx, oldmaxx) - 96, max(maxy, oldmaxy));
 	SDL_UpdateRect(srcsurface, 0,0,0,0);
 	SDL_UpdateRect(dstsurface, 0,0,0,0);//update_screen(min(minx, oldminx), min(miny, oldminy), max(maxx, oldmaxx), max(maxy, oldmaxy));
@@ -458,7 +437,7 @@ void update_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	{
 		moveSelection(x - lastx, y - lasty);
 		// [HACK] i shouldn't be adding 96 here at all
-		pasteSelection(screen, screen, x + 96, y, 0);
+		pasteSelection(canvas, screen, x + 96, y, 1, 0);
 	}
 	else
 	{
@@ -475,7 +454,7 @@ void finish_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 {
 	if (dragmode == 1)
 	{
-		pasteSelection(canvas, canvas, x,y, 1);
+		pasteSelection(canvas, canvas, x, y, 0, 1);
 	}
 	dragmode = 0;
 }
