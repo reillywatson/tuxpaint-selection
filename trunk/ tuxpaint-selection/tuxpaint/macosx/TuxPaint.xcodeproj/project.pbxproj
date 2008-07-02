@@ -242,6 +242,7 @@
 		22F461770CE41CDE00DB7761 /* libintl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2248FC390CDEF241004BC461 /* libintl.a */; };
 		8D11072B0486CEB800E47090 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C165CFE840E0CC02AAC07 /* InfoPlist.strings */; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
+		B4E837450E1B4321001228F3 /* selection.c in Sources */ = {isa = PBXBuildFile; fileRef = B4E837420E1B4321001228F3 /* selection.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildRule section */
@@ -650,6 +651,9 @@
 		22F45E530CE4015300DB7761 /* grass.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = grass.c; path = ../magic/src/grass.c; sourceTree = SOURCE_ROOT; };
 		22F4616E0CE41B6E00DB7761 /* tp_magic_api.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = tp_magic_api.h; sourceTree = SOURCE_ROOT; };
 		8D1107310486CEB800E47090 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B4E837420E1B4321001228F3 /* selection.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = selection.c; path = ../src/selection.c; sourceTree = SOURCE_ROOT; };
+		B4E837430E1B4321001228F3 /* selection.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = selection.h; path = ../src/selection.h; sourceTree = SOURCE_ROOT; };
+		B4E837440E1B4321001228F3 /* tuxpaint.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tuxpaint.h; path = ../src/tuxpaint.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1125,6 +1129,9 @@
 		29B97315FDCFA39411CA2CEA /* Tux Paint Sources */ = {
 			isa = PBXGroup;
 			children = (
+				B4E837420E1B4321001228F3 /* selection.c */,
+				B4E837430E1B4321001228F3 /* selection.h */,
+				B4E837440E1B4321001228F3 /* tuxpaint.h */,
 				221532C10C94825B00CDCB3B /* im.c */,
 				221532C20C94825B00CDCB3B /* im.h */,
 				225FCE110ADF277300466C53 /* cursor.c */,
@@ -2216,6 +2223,7 @@
 				222862BE0D0B48B100CA3F84 /* message.m in Sources */,
 				22140ABE0D110600009534C6 /* TransparentTextView.m in Sources */,
 				22140B9D0D1252E5009534C6 /* speech.m in Sources */,
+				B4E837450E1B4321001228F3 /* selection.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2482,7 +2490,10 @@
 		224A35F809339642005A3695 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = ppc;
+				ARCHS = (
+					ppc,
+					i386,
+				);
 				FRAMEWORK_SEARCH_PATHS = "/Library/Frameworks/**";
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
@@ -2688,8 +2699,14 @@
 		224A35FC09339642005A3695 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				HEADER_SEARCH_PATHS = include;
-				LIBRARY_SEARCH_PATHS = lib;
+				HEADER_SEARCH_PATHS = (
+					"include,",
+					/Users/Shared/tuxpaint/include,
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"lib,",
+					/Users/Shared/tuxpaint/lib,
+				);
 				SDKROOT = /Developer/SDKs/MacOSX10.4u.sdk;
 			};
 			name = Development;
