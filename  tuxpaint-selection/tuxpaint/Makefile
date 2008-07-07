@@ -875,6 +875,7 @@ install-man:
 tuxpaint:	obj/tuxpaint.o obj/i18n.o obj/im.o obj/cursor.o obj/pixels.o \
 		obj/rgblinear.o obj/playsound.o obj/fonts.o \
 		obj/progressbar.o obj/dirwalk.o obj/get_fname.o \
+		obj/selection.o \
 		$(HQXX_O) $(ARCH_LIBS)
 	@echo
 	@echo "...Linking Tux Paint..."
@@ -897,7 +898,7 @@ obj/tuxpaint.o:	src/tuxpaint.c \
 		src/i18n.h src/im.h src/cursor.h src/pixels.h \
 		src/rgblinear.h src/playsound.h src/fonts.h \
 		src/progressbar.h src/dirwalk.h src/get_fname.h \
-		src/compiler.h src/debug.h \
+		src/compiler.h src/debug.h src/selection.h \
 		src/tools.h src/titles.h src/colors.h src/shapes.h \
 		src/sounds.h src/tip_tux.h src/great.h \
 		src/tp_magic_api.h \
@@ -987,6 +988,11 @@ obj/rgblinear.o:	src/rgblinear.c src/rgblinear.h \
 	@$(CC) $(CFLAGS) $(DEBUG_FLAGS) $(SDL_CFLAGS) $(DEFS) \
 		-c src/rgblinear.c -o obj/rgblinear.o
 
+obj/selection.o:	src/selection.c src/selection.h
+	@echo
+	@echo "...Compiling selection functions..."
+	@$(CC) $(CFLAGS) $(DEBUG_FLAGS) $(SDL_CFLAGS) $(DEFS) \
+		-c src/selection.c -o obj/selection.o
 
 obj/BeOS_print.o:	src/BeOS_print.cpp src/BeOS_print.h
 	@echo
