@@ -1,7 +1,7 @@
 #include "selection.h"
+#include "pixels.h"
 //#include "shapes.h"
 
-static SDL_Surface *selectionMask = NULL;
 static int selectTool = SELECTTOOL_RECT;
 static int startx = 0;
 static int starty = 0;
@@ -364,7 +364,9 @@ static int oldmaxx = -1;
 static int oldminy = 10000;
 static int oldmaxy = -1;
 
-static void copySelection()
+// remember the original selection so it can be copied
+// while moving it around
+static void storeSelection()
 {
 	// [FIXME] I don't free old origPoints memory!
 	origPoints = malloc(numPoints * sizeof(Point));
@@ -385,6 +387,56 @@ static void copySelection()
 	}
 }
 
+SDL_Surface *clipboard = 0;
+
+// copy to clipboard
+void copy_selection(SDL_Surface *surface)
+{
+	if (clipboard != 0)
+	{
+		SDL_FreeSurface(clipboard);
+		clipboard = 0;
+	}
+	clipboard = SDL_CreateRGBSurface(surface->flags,
+		maxx - minx, maxy - miny,
+		surface->format->BitsPerPixel,
+		surface->format->Rmask,
+		surface->format->Gmask,
+		surface->format->Bmask,
+		surface->format->Amask);
+	int i, j;
+	SDL_Rect src = {0, 0, 1, 1};
+	SDL_Rect dst = {0, 0, 1, 1};
+	for (j = miny; j <= maxy; j++)
+	{
+		for (i = minx; i <= maxx; i++)
+		{
+			src.x = i;
+			src.y = j;
+			dst.x = i - minx;
+			dst.y = j - miny;
+			if (isSelected(i, j))
+			{
+				SDL_BlitSurface(surface, &src, clipboard, &dst);
+				//putpixels[clipboard->format->BitsPerPixel](clipboard, i, j, getpixels[surface->format->BitsPerPixel](surface, i, j));
+			}
+		}
+	}
+}
+
+void paste_from_clipboard(SDL_Surface *dst, int x, int y)
+{
+	if (clipboard == 0)
+	{
+		//debug("pasting when clipboard contents are empty!");
+		return;
+	}
+	SDL_Rect srcrect = {0, 0, clipboard->w, clipboard->h};
+	SDL_Rect dstrect = {x, y, clipboard->w, clipboard->h};
+	SDL_BlitSurface(clipboard, &srcrect, dst, &dstrect);
+	SDL_UpdateRect(dst, 0, 0, 0, 0);
+}
+
 // dstsurface can be either canvas or screen
 void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int y, int canvastoscreen, int cut)
 {
@@ -396,6 +448,9 @@ void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int
 	SDL_BlitSurface(srcsurface, &src, dstsurface, &dst);
 	if (cut == 1)
 	{
+		// instead of doing this, i think we should be using the screen surface
+		// as a "preview" layer, and then only committing the change when the selection is cleared
+		// (ie a new selection is made or the user goes to do something else)
 		erase_rect_from_surface(srcsurface, &src, 0);
 	}
 
@@ -415,11 +470,12 @@ void begin_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	lastx = x;
 	lasty = y;
 	dragmode = 0;
-	
+
 	if (isSelected(x,y) == 1)
 	{
 		dragmode = 1;
-		copySelection();
+		storeSelection();
+		copy_selection(canvas);
 	}
 	else
 	{
@@ -437,7 +493,7 @@ void update_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	{
 		moveSelection(x - lastx, y - lasty);
 		// [HACK] i shouldn't be adding 96 here at all
-		pasteSelection(canvas, screen, x + 96, y, 1, 0);
+	//	pasteSelection(canvas, screen, x + 96, y, 1, 0);
 	}
 	else
 	{
@@ -454,27 +510,23 @@ void finish_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 {
 	if (dragmode == 1)
 	{
-		pasteSelection(canvas, canvas, x, y, 0, 1);
+		paste_from_clipboard(canvas, x - 96, y);
+		update_canvas(0, 0, canvas->w, canvas->h);
+	//	pasteSelection(canvas, canvas, x, y, 0, 1);
 	}
 	dragmode = 0;
 }
 
 
-void copy_selection_to_clipboard()
-{
-}
-
-
 void selectionInit(SDL_Surface *canvas)
 {
-	selectionMask = SDL_CreateRGBSurface(SDL_SRCALPHA, canvas->w, canvas->h, 32, 0,0,0,0);
 	set_selection_tool(SELECTTOOL_RECT);
 }
 
 void selectionCleanup()
 {
-	SDL_FreeSurface(selectionMask);
-	selectionMask = NULL;
+	SDL_FreeSurface(clipboard);
+	clipboard = NULL;
 }
 
 void shrinkToFit(Point *pointArray, int numPoints, SDL_Surface *surface)
