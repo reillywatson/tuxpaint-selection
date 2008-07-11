@@ -17,5 +17,6 @@ void erase_rect_from_surface(SDL_Surface *surface, SDL_Rect *rect, int screencoo
 void update_canvas(int x1, int y1, int x2, int y2);
 void update_screen(int x1, int y1, int x2, int y2);
 
+// update the undo stack
 void rec_undo_buffer();
 #endif
