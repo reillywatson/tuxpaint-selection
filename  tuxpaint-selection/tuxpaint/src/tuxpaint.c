@@ -859,6 +859,15 @@ static int starter_mirrored, starter_flipped, starter_personal;
 static Uint8 canvas_color_r, canvas_color_g, canvas_color_b;
 Uint8 * touched;
 
+/* Tool change listener bookkeepping: */
+typedef struct
+{
+	ToolChangeCallback *listeners;
+	int arraysize;
+	int listenercount;
+} ToolChangeInfo;
+
+static ToolChangeInfo toolchange;
 
 /* Magic tools API and tool handles: */
 
@@ -1389,6 +1398,8 @@ static void update_stamp_xor(void);
 #endif
 
 static void set_active_stamp(void);
+
+static void notify_tool_changed(int newtool);
 
 static void do_eraser(int x, int y);
 static void disable_avail_tools(void);
@@ -9486,6 +9497,49 @@ static void do_redo(void)
 
   draw_toolbar();
   update_screen_rect(&r_tools);
+}
+
+
+void add_tool_changed_listener(ToolChangeCallback cb)
+{
+	if (toolchange.listenercount > toolchange.arraysize)
+	{
+		toolchange.arraysize = toolchange.arraysize * 2;
+		toolchange.listeners = realloc(toolchange.listeners, sizeof(ToolChangeCallback) * toolchange.arraysize);
+	}
+	toolchange.listeners[toolchange.listenercount] = cb;
+	toolchange.listenercount++;
+}
+
+void remove_tool_changed_listener(ToolChangeCallback cb)
+{
+	int i;
+	for (i = 0; i < toolchange.listenercount; i++)
+	{
+		if (toolchange.listeners[i] == cb)
+		{
+			// shift over all the following listeners
+			int j;
+			for (j = i + 1; j < toolchange.listenercount; j++)
+			{
+				toolchange.listeners[j - 1] = toolchange.listeners[j];
+			}
+			toolchange.listenercount--;
+			// we'll only remove the first matching listener; to remove all matching
+			// listeners, remove this break statement
+			break;
+		}
+	}
+}
+
+static void notify_tool_changed(int newtool)
+{
+	int i;
+	for (i = 0; i < toolchange.listenercount; i++)
+	{
+		(*toolchange.listeners[i])(newtool);
+	}
+	
 }
 
 
