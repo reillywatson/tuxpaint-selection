@@ -19,4 +19,13 @@ void update_screen(int x1, int y1, int x2, int y2);
 
 // update the undo stack
 void rec_undo_buffer();
+
+// A tool change listener gets called when the current tool is changed.
+typedef void (*ToolChangeCallback) (int);
+
+// Add a tool change listener (duplicate callbacks are allowed, but that function will then be called twice)
+void add_tool_changed_listener(ToolChangeCallback cb);
+// Remove a tool change listener (removes the first matching ToolChangeCallback in the set of listeners)
+void remove_tool_changed_listener(ToolChangeCallback cb);
+
 #endif
