@@ -867,7 +867,7 @@ typedef struct
 	int listenercount;
 } ToolChangeInfo;
 
-static ToolChangeInfo toolchange;
+static ToolChangeInfo toolchange = {0, 0, 0};
 
 /* Magic tools API and tool handles: */
 
@@ -1289,7 +1289,7 @@ static int brush_counter, brush_frame;
 
 
 static unsigned cur_color;
-static int cur_tool, cur_brush;
+static int cur_tool, old_tool, cur_brush;
 static int cur_stamp[MAX_STAMP_GROUPS];
 static int cur_shape, cur_magic;
 static int cur_font, cur_eraser;
@@ -1399,7 +1399,8 @@ static void update_stamp_xor(void);
 
 static void set_active_stamp(void);
 
-static void notify_tool_changed(int newtool);
+static void set_cur_tool(int newtool);
+static void notify_tool_changed(int newtool, int oldtool);
 
 static void do_eraser(int x, int y);
 static void disable_avail_tools(void);
@@ -1880,7 +1881,7 @@ static void mainloop(void)
     old_stamp_group, select_tool_mode, select_tool_x1, select_tool_y1;
   int num_things;
   int *thing_scroll;
-  int cur_thing, do_draw, old_tool, tmp_int, max;
+  int cur_thing, do_draw, tmp_int, max;
   int ignoring_motion;
   SDL_TimerID scrolltimer = NULL;
   SDL_Event event;
@@ -2352,14 +2353,11 @@ static void mainloop(void)
 	      }
 	    }
 
+		set_cur_tool(which);
+		
+		playsound(screen, 1, SND_CLICK, 0, SNDPOS_LEFT, SNDDIST_NEAR);
 
-	    old_tool = cur_tool;
-	    cur_tool = which;
-	    draw_toolbar();
-	    update_screen_rect(&r_tools);
-
-	    playsound(screen, 1, SND_CLICK, 0, SNDPOS_LEFT, SNDDIST_NEAR);
-
+		
 	    // FIXME: this "if" is just plain gross
 	    if (cur_tool != TOOL_TEXT)
 	      draw_tux_text(tool_tux[cur_tool], tool_tips[cur_tool], 1);
@@ -9499,11 +9497,24 @@ static void do_redo(void)
   update_screen_rect(&r_tools);
 }
 
+static void set_cur_tool(int newtool)
+{
+	    old_tool = cur_tool;
+	    cur_tool = newtool;
+	    draw_toolbar();
+	    update_screen_rect(&r_tools);
+		
+		notify_tool_changed(newtool, old_tool);
+}
 
 void add_tool_changed_listener(ToolChangeCallback cb)
 {
-	if (toolchange.listenercount > toolchange.arraysize)
+	if (toolchange.listenercount >= toolchange.arraysize)
 	{
+		if (toolchange.arraysize == 0)
+		{
+			toolchange.arraysize = 4;
+		}
 		toolchange.arraysize = toolchange.arraysize * 2;
 		toolchange.listeners = realloc(toolchange.listeners, sizeof(ToolChangeCallback) * toolchange.arraysize);
 	}
@@ -9532,12 +9543,12 @@ void remove_tool_changed_listener(ToolChangeCallback cb)
 	}
 }
 
-static void notify_tool_changed(int newtool)
+static void notify_tool_changed(int newtool, int oldtool)
 {
 	int i;
 	for (i = 0; i < toolchange.listenercount; i++)
 	{
-		(*toolchange.listeners[i])(newtool);
+		(*toolchange.listeners[i])(newtool, oldtool);
 	}
 	
 }
