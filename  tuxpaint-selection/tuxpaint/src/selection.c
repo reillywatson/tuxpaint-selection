@@ -1,5 +1,6 @@
 #include "selection.h"
 #include "pixels.h"
+//#include "tools.h"
 //#include "shapes.h"
 
 static int selectTool = SELECTTOOL_RECT;
@@ -517,10 +518,20 @@ void finish_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	dragmode = 0;
 }
 
+static void select_toolchanged(int newtool, int oldtool)
+{
+	// cleanup the selection (any xor drawing, etc)
+	// [FIXME] I can't include tools.h from selection.c (probably the gettext_noop issue again)
+	if (oldtool == 14) //TOOL_SELECT)
+	{
+	}
+}
+
 
 void selectionInit(SDL_Surface *canvas)
 {
 	set_selection_tool(SELECTTOOL_RECT);
+	add_tool_changed_listener(&select_toolchanged);
 }
 
 void selectionCleanup()
