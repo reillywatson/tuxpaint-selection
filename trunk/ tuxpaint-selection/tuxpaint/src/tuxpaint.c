@@ -705,6 +705,21 @@ static void setup_screen_layout(void)
 static SDL_Surface *screen;
 static SDL_Surface *canvas;
 
+SDL_Surface *get_canvas(void)
+{
+	return canvas;
+}
+
+SDL_Surface *get_screen(void)
+{
+	return screen;
+}
+
+SDL_Rect get_canvas_offset(void)
+{
+	return r_canvas;
+}
+
 static SDL_Surface *img_starter, *img_starter_bkgd;
 
 /* Update a rect. based on two x/y coords (not necessarly in order): */

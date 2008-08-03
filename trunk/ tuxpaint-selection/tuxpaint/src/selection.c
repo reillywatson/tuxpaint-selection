@@ -1,5 +1,6 @@
 #include "selection.h"
 #include "pixels.h"
+#include "tuxpaint.h"
 //#include "tools.h"
 //#include "shapes.h"
 
@@ -364,6 +365,9 @@ static int oldminx = 10000;
 static int oldmaxx = -1;
 static int oldminy = 10000;
 static int oldmaxy = -1;
+static int removeoldrect = 0;
+static int selectoffsetx = 0;
+static int selectoffsety = 0;
 
 // remember the original selection so it can be copied
 // while moving it around
@@ -391,13 +395,17 @@ static void storeSelection()
 SDL_Surface *clipboard = 0;
 
 // copy to clipboard
-void copy_selection(SDL_Surface *surface)
+void copy_selection()
 {
+	SDL_Surface *surface = get_canvas();
 	if (clipboard != 0)
 	{
 		SDL_FreeSurface(clipboard);
 		clipboard = 0;
 	}
+	// Is it fast enough to free and recreate this surface on each new copy,
+	// or should I make a really big surface one time?  I figure this way
+	// is more memory-friendly, since the surface is the exact size it needs to be.
 	clipboard = SDL_CreateRGBSurface(surface->flags,
 		maxx - minx, maxy - miny,
 		surface->format->BitsPerPixel,
@@ -408,18 +416,21 @@ void copy_selection(SDL_Surface *surface)
 	int i, j;
 	SDL_Rect src = {0, 0, 1, 1};
 	SDL_Rect dst = {0, 0, 1, 1};
+	int rcanvas = get_canvas_offset().x;
+
+	// this could be optimized for rectangular/elliptical selections,
+	// rather than checking isSelected on each pixel
 	for (j = miny; j <= maxy; j++)
 	{
 		for (i = minx; i <= maxx; i++)
 		{
-			src.x = i;
-			src.y = j;
-			dst.x = i - minx;
-			dst.y = j - miny;
 			if (isSelected(i, j))
 			{
+				src.x = i - rcanvas;
+				src.y = j;
+				dst.x = i - minx;
+				dst.y = j - miny;
 				SDL_BlitSurface(surface, &src, clipboard, &dst);
-				//putpixels[clipboard->format->BitsPerPixel](clipboard, i, j, getpixels[surface->format->BitsPerPixel](surface, i, j));
 			}
 		}
 	}
@@ -433,7 +444,7 @@ void paste_from_clipboard(SDL_Surface *dst, int x, int y)
 		return;
 	}
 	SDL_Rect srcrect = {0, 0, clipboard->w, clipboard->h};
-	SDL_Rect dstrect = {x, y, clipboard->w, clipboard->h};
+	SDL_Rect dstrect = {x - selectoffsetx, y - selectoffsety, clipboard->w, clipboard->h};
 	SDL_BlitSurface(clipboard, &srcrect, dst, &dstrect);
 	SDL_UpdateRect(dst, 0, 0, 0, 0);
 }
@@ -449,9 +460,7 @@ void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int
 	SDL_BlitSurface(srcsurface, &src, dstsurface, &dst);
 	if (cut == 1)
 	{
-		// instead of doing this, i think we should be using the screen surface
-		// as a "preview" layer, and then only committing the change when the selection is cleared
-		// (ie a new selection is made or the user goes to do something else)
+		removeoldrect = 1;
 		erase_rect_from_surface(srcsurface, &src, 0);
 	}
 
@@ -461,7 +470,6 @@ void pasteSelection(SDL_Surface *srcsurface, SDL_Surface *dstsurface, int x, int
 	SDL_UpdateRect(srcsurface, 0,0,0,0);
 	SDL_UpdateRect(dstsurface, 0,0,0,0);//update_screen(min(minx, oldminx), min(miny, oldminy), max(maxx, oldmaxx), max(maxy, oldmaxy));
 }
-
 
 
 void begin_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
@@ -475,6 +483,8 @@ void begin_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	if (isSelected(x,y) == 1)
 	{
 		dragmode = 1;
+		selectoffsetx = x - minx;
+		selectoffsety = y - miny;
 		storeSelection();
 		copy_selection(canvas);
 	}
@@ -489,12 +499,15 @@ void begin_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 
 void update_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 {
+	// remove the selection drawing from the old position
 	drawOutlineXOR();
+	update_canvas(x, y, x + (maxx - minx), y + (maxy - miny));
+	
 	if (dragmode == 1 && lastx > -1)
 	{
 		moveSelection(x - lastx, y - lasty);
 		// [HACK] i shouldn't be adding 96 here at all
-	//	pasteSelection(canvas, screen, x + 96, y, 1, 0);
+		pasteSelection(canvas, screen, x + 96, y, 1, 0);
 	}
 	else
 	{
@@ -504,7 +517,6 @@ void update_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
 	lastx = x;
 	lasty = y;
 }
-
 
 
 void finish_selection(SDL_Surface *canvas, SDL_Surface *screen, int x, int y)
@@ -524,6 +536,14 @@ static void select_toolchanged(int newtool, int oldtool)
 	// [FIXME] I can't include tools.h from selection.c (probably the gettext_noop issue again)
 	if (oldtool == 14) //TOOL_SELECT)
 	{
+		if (removeoldrect == 1)
+		{
+			SDL_Rect src = {oldminx, oldminy, oldmaxx - oldminx + 1, oldmaxy - oldminy + 1};
+			SDL_Surface *canvas = get_canvas();
+			erase_rect_from_surface(canvas, &src, 1);
+			update_canvas(0, 0, canvas->w, canvas->h);
+			removeoldrect = 0;
+		}
 	}
 }
 

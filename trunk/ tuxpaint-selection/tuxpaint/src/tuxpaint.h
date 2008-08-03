@@ -11,6 +11,8 @@ void line_xor_to_screen(int x1, int y1, int x2, int y2, int screencoords);
 // Draw a XOR pixel onto the screen (does not modify canvas)
 void xorpixel_to_screen(int x, int y, int screencoords);
 
+void shape_xor_to_screen(int x1, int y1, int x2, int y2, int shapetype, int screencoords);
+
 // Erase a rectangle from a surface, replacing it with the background.
 void erase_rect_from_surface(SDL_Surface *surface, SDL_Rect *rect, int screencoords);
 
@@ -27,5 +29,10 @@ typedef void (*ToolChangeCallback) (int, int);
 void add_tool_changed_listener(ToolChangeCallback cb);
 // Remove a tool change listener (removes the first matching ToolChangeCallback in the set of listeners)
 void remove_tool_changed_listener(ToolChangeCallback cb);
+
+SDL_Surface *get_canvas(void);
+SDL_Surface *get_screen(void);
+
+SDL_Rect get_canvas_offset(void);
 
 #endif
