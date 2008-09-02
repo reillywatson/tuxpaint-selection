@@ -1,6 +1,7 @@
 #include "selection.h"
 #include "pixels.h"
 #include "tuxpaint.h"
+#include "clipboard.h"
 //#include "tools.h"
 //#include "shapes.h"
 
@@ -445,7 +446,15 @@ void paste_from_clipboard(SDL_Surface *dst, int x, int y)
 	}
 	SDL_Rect srcrect = {0, 0, clipboard->w, clipboard->h};
 	SDL_Rect dstrect = {x - selectoffsetx, y - selectoffsety, clipboard->w, clipboard->h};
-	SDL_BlitSurface(clipboard, &srcrect, dst, &dstrect);
+	SDL_Surface *surface = get_clipboard_contents();
+	if (surface != NULL)
+	{
+		SDL_BlitSurface(surface, &srcrect, dst, &dstrect);
+	}
+	else
+	{
+		SDL_BlitSurface(clipboard, &srcrect, dst, &dstrect);
+	}
 	SDL_UpdateRect(dst, 0, 0, 0, 0);
 }
 
