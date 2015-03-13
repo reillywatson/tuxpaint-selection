@@ -1,0 +1,1 @@
+Reilly Watson's Summer of Code project - adding selection tools to TuxPaint.
